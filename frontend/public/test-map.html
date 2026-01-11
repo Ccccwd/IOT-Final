@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>百度地图测试</title>
+  <style>
+    #map {
+      width: 100%;
+      height: 600px;
+      border: 1px solid #ccc;
+    }
+    #status {
+      padding: 20px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>百度地图测试页面</h1>
+  <div id="status">正在加载...</div>
+  <div id="map"></div>
+
+  <script>
+    // 配置你的 AK
+    const AK = 'jksZSsiBeTjquXGqa14E3jCZygkS44ky';
+
+    console.log('[测试] 页面加载完成');
+    console.log('[测试] 开始加载百度地图, AK:', AK);
+    document.getElementById('status').innerHTML = '正在加载百度地图...';
+
+    // 动态加载百度地图脚本
+    const script = document.createElement('script');
+    script.src = `https://api.map.baidu.com/api?v=3.0&ak=${AK}&callback=initMap`;
+    script.onerror = function() {
+      console.error('[测试] 百度地图脚本加载失败');
+      document.getElementById('status').innerHTML = '<p style="color: red;">❌ 百度地图脚本加载失败</p>';
+    };
+
+    window.initMap = function() {
+      console.log('[测试] initMap 回调被调用');
+      console.log('[测试] BMap 是否可用:', typeof BMap);
+      console.log('[测试] BMap 对象:', BMap);
+
+      if (typeof BMap === 'undefined') {
+        document.getElementById('status').innerHTML = '<p style="color: red;">❌ BMap 未定义</p>';
+        return;
+      }
+
+      try {
+        console.log('[测试] 开始创建地图实例...');
+
+        // 创建地图实例
+        const map = new BMap.Map("map");
+        console.log('[测试] 地图实例创建成功');
+
+        // 杭州西湖坐标
+        const point = new BMap.Point(120.1551, 30.2741);
+        map.centerAndZoom(point, 15);
+        console.log('[测试] 地图中心点设置成功');
+
+        // 添加控件
+        map.addControl(new BMap.NavigationControl());
+        map.addControl(new BMap.ScaleControl());
+        console.log('[测试] 地图控件添加成功');
+
+        // 添加标记
+        const marker = new BMap.Marker(point);
+        map.addOverlay(marker);
+        console.log('[测试] 地图标记添加成功');
+
+        console.log('[测试] ✅ 地图创建成功！');
+        document.getElementById('status').innerHTML = '<p style="color: green; font-size: 20px;">✅ 地图加载成功！</p>';
+      } catch (error) {
+        console.error('[测试] 地图创建失败:', error);
+        document.getElementById('status').innerHTML = '<p style="color: red;">❌ 地图创建失败: ' + error.message + '</p>';
+      }
+    };
+
+    document.head.appendChild(script);
+    console.log('[测试] 脚本标签已添加到页面');
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, Row, Col, Statistic, Badge, Space, Spin } from 'antd';
 import {
-  BikeOutlined,
+  CarOutlined,
   UserOutlined,
   ShoppingOutlined,
   DollarOutlined,
@@ -20,7 +20,7 @@ function Dashboard() {
   if (loading && bikes.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" />
       </div>
     );
   }
@@ -56,7 +56,7 @@ function Dashboard() {
             <Statistic
               title="总车辆数"
               value={stats.total_bikes || 0}
-              prefix={<BikeOutlined />}
+              prefix={<CarOutlined />}
               valueStyle={{ color: '#1890ff' }}
             />
           </Card>

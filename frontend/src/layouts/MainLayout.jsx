@@ -5,6 +5,7 @@ import {
   UserOutlined,
   ShoppingOutlined,
   BarsOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import './MainLayout.css';
@@ -35,6 +36,11 @@ function MainLayout() {
       key: '/orders',
       icon: <ShoppingOutlined />,
       label: '订单管理',
+    },
+    {
+      key: '/analytics',
+      icon: <LineChartOutlined />,
+      label: '数据分析',
     },
   ];
 

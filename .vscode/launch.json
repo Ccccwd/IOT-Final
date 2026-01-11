@@ -31,6 +31,7 @@
       "request": "launch",
       "url": "http://localhost:5173",
       "webRoot": "${workspaceFolder}/frontend",
+      "timeout": 30000,
       "runtimeArgs": [
         "--new-window"
       ],

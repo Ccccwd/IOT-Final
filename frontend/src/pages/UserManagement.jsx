@@ -255,7 +255,7 @@ function UserManagement() {
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         onOk={() => form.submit()}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}
@@ -313,7 +313,7 @@ function UserManagement() {
         open={bindCardModalVisible}
         onCancel={() => setBindCardModalVisible(false)}
         onOk={() => bindCardForm.submit()}
-        destroyOnClose
+        destroyOnHidden
       >
         {selectedUser && (
           <div>

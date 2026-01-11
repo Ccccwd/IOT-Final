@@ -6,6 +6,7 @@ import MainLayout from './layouts/MainLayout';
 import Dashboard from './components/Dashboard';
 import UserManagement from './pages/UserManagement';
 import OrderManagement from './pages/OrderManagement';
+import Analytics from './pages/Analytics';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="users" element={<UserManagement />} />
             <Route path="orders" element={<OrderManagement />} />
+            <Route path="analytics" element={<Analytics />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

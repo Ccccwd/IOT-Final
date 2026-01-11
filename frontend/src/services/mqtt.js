@@ -2,8 +2,8 @@ import mqtt from 'mqtt';
 
 // MQTT 配置
 const MQTT_BROKER = 'broker.emqx.io';
-const MQTT_PORT = 8083; // WebSocket 端口
-const MQTT_URL = `ws://${MQTT_BROKER}:${MQTT_PORT}/mqtt`;
+const MQTT_PORT = 8084; // WebSocket Secure 端口
+const MQTT_URL = `wss://${MQTT_BROKER}:${MQTT_PORT}/mqtt`;
 
 class MQTTService {
   constructor() {
@@ -22,8 +22,8 @@ class MQTTService {
       this.client = mqtt.connect(MQTT_URL, {
         clientId,
         clean: true,
-        connectTimeout: 4000,
-        reconnectPeriod: 5000,
+        connectTimeout: 10000,
+        reconnectPeriod: 10000,
       });
 
       // 连接成功
