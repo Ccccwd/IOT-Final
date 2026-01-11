@@ -17,7 +17,14 @@
       "Bash(npm create vite:*)",
       "Bash(npm install:*)",
       "Bash(docker exec:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(findstr:*)",
+      "Bash(py:*)",
+      "Bash(E:\\anaconda\\python.exe:*)",
+      "Bash(\"E:/anaconda/python.exe\":*)",
+      "Bash(\"E:/anaconda/python.exe\" -m venv:*)",
+      "Bash(../.venv/Scripts/python.exe:*)"
     ],
     "deny": [],
     "ask": []

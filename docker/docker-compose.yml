@@ -22,7 +22,34 @@ services:
       timeout: 5s
       retries: 5
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    networks:
+      - bike-network
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: bike-sharing-backend
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: bikeuser
+      MYSQL_PASSWORD: bikepass123
+      MYSQL_DATABASE: bikesharing
+      PYTHON_VERSION: "3.12"
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: always
+    networks:
+      - bike-network
 
 volumes:
   mysql_data:
     driver: local
+
+networks:
+  bike-network:
+    driver: bridge

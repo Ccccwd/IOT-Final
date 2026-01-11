@@ -336,7 +336,7 @@ async def unlock_bike(unlock: OrderUnlock, db: Session = Depends(get_db)):
     if bike.status != BikeStatus.IDLE.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f="车辆状态不是空闲，当前状态: {bike.status}"
+            detail=f"车辆状态不是空闲，当前状态: {bike.status}"
         )
 
     # 创建订单

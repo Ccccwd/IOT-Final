@@ -2,79 +2,32 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "启动后端服务",
+      "label": "dev:frontend",
       "type": "shell",
-      "command": "cd backend && uvicorn main:app --reload --host 0.0.0.0 --port 8000",
-      "group": "none",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "build",
       "presentation": {
         "echo": true,
         "reveal": "always",
-        "panel": "new"
+        "focus": false,
+        "panel": "dedicated",
+        "clear": true
       },
       "isBackground": true,
-      "problemMatcher": []
-    },
-    {
-      "label": "启动前端服务",
-      "type": "shell",
-      "command": "cd frontend && npm run dev",
-      "group": "none",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "panel": "new"
-      },
-      "isBackground": true,
-      "problemMatcher": []
-    },
-    {
-      "label": "启动 MySQL 容器",
-      "type": "shell",
-      "command": "cd docker && docker-compose up -d",
-      "group": "none",
-      "presentation": {
-        "echo": true,
-        "reveal": "always"
-      }
-    },
-    {
-      "label": "停止 MySQL 容器",
-      "type": "shell",
-      "command": "cd docker && docker-compose down",
-      "group": "none",
-      "presentation": {
-        "echo": true,
-        "reveal": "always"
-      }
-    },
-    {
-      "label": "查看 MySQL 日志",
-      "type": "shell",
-      "command": "cd docker && docker-compose logs -f mysql",
-      "group": "none",
-      "presentation": {
-        "echo": true,
-        "reveal": "always"
-      }
-    },
-    {
-      "label": "安装 Python 依赖",
-      "type": "shell",
-      "command": ".venv\\Scripts\\pip install -r requirements.txt",
-      "group": "none",
-      "presentation": {
-        "echo": true,
-        "reveal": "always"
-      }
-    },
-    {
-      "label": "安装前端依赖",
-      "type": "shell",
-      "command": "cd frontend && npm install",
-      "group": "none",
-      "presentation": {
-        "echo": true,
-        "reveal": "always"
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "Local:.*http://localhost:5173.*"
+        }
       }
     }
   ]
