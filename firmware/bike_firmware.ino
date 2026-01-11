@@ -180,14 +180,11 @@ void setup() {
   setupGPS();
   setupWiFi();
   setupMQTT();
-
-  // 播放启动提示音
-  playBeep(2, 100);
   displayMessage = "系统启动中...";
   displaySubMessage = "请稍候";
 
   delay(2000);
-  Serial.println(F("✅ 系统初始化完成"));
+  Serial.println(F(" 系统初始化完成"));
   displayMessage = "待机中";
   displaySubMessage = "请刷卡解锁";
 }
@@ -211,11 +208,11 @@ void setupWiFi() {
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println();
-    Serial.print(F("✅ WiFi 已连接: "));
+    Serial.print(F(" WiFi 已连接: "));
     Serial.println(WiFi.localIP());
   } else {
     Serial.println();
-    Serial.println(F("❌ WiFi 连接失败，将尝试重连"));
+    Serial.println(F(" WiFi 连接失败，将尝试重连"));
   }
 }
 
@@ -236,14 +233,14 @@ void setupRFID() {
   rfid.PCD_Init();
   rfid.PCD_SetAntennaGain(rfid.RxGain_max);
 
-  Serial.print(F("📡 RFID 版本: 0x"));
+  Serial.print(F(" RFID 版本: 0x"));
   byte version = rfid.PCD_ReadRegister(rfid.VersionReg);
   Serial.println(version, HEX);
 
   if (version == 0x00 || version == 0xFF) {
-    Serial.println(F("⚠️  警告: RFID 读卡器未检测到"));
+    Serial.println(F("  警告: RFID 读卡器未检测到"));
   } else {
-    Serial.println(F("✅ RFID 读卡器已就绪"));
+    Serial.println(F(" RFID 读卡器已就绪"));
   }
 }
 
@@ -252,8 +249,8 @@ void setupRFID() {
  */
 void setupGPS() {
   GPSSerial.begin(9600);  // NEO-6M 默认波特率
-  Serial.println(F("📡 GPS 模块已启动"));
-  Serial.println(F("⏳ 等待 GPS 定位（需要 1-5 分钟）..."));
+  Serial.println(F(" GPS 模块已启动"));
+  Serial.println(F(" 等待 GPS 定位（需要 1-5 分钟）..."));
 }
 
 /**
@@ -263,7 +260,7 @@ void setupOLED() {
   u8g2.begin();
   u8g2.enableUTF8Print();
   u8g2.setContrast(128); // 对比度 0-255
-  Serial.println(F("✅ OLED 显示屏已就绪"));
+  Serial.println(F(" OLED 显示屏已就绪"));
 
   // 显示启动画面
   u8g2.clearBuffer();
@@ -280,7 +277,7 @@ void setupOLED() {
 void setupBuzzer() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
-  Serial.println(F("✅ 蜂鸣器已就绪"));
+  Serial.println(F(" 蜂鸣器已就绪"));
 }
 
 // =========================== 主循环函数 ===========================
@@ -338,7 +335,7 @@ void loopWiFi() {
 
     // 定时尝试重连
     if (currentMillis - lastWifiRetryTime >= WIFI_RETRY_INTERVAL) {
-      Serial.println(F("📡 尝试重新连接 WiFi..."));
+      Serial.println(F(" 尝试重新连接 WiFi..."));
       WiFi.disconnect();
       WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
       lastWifiRetryTime = currentMillis;
@@ -357,21 +354,21 @@ void loopMQTT() {
     unsigned long currentMillis = millis();
 
     if (currentMillis - lastMqttRetryTime >= MQTT_RETRY_INTERVAL) {
-      Serial.println(F("📡 尝试连接 MQTT Broker..."));
+      Serial.println(F(" 尝试连接 MQTT Broker..."));
 
       // 生成随机 Client ID
       String clientId = "bike_001_";
       clientId += String(random(0xffff), HEX);
 
       if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
-        Serial.println(F("✅ MQTT 已连接"));
+        Serial.println(F(" MQTT 已连接"));
 
         // 订阅指令主题
         mqttClient.subscribe(TOPIC_COMMAND);
-        Serial.print(F("✅ 已订阅主题: "));
+        Serial.print(F(" 已订阅主题: "));
         Serial.println(TOPIC_COMMAND);
       } else {
-        Serial.print(F("❌ MQTT 连接失败, rc="));
+        Serial.print(F(" MQTT 连接失败, rc="));
         Serial.println(mqttClient.state());
       }
 
@@ -387,7 +384,7 @@ void loopMQTT() {
  * MQTT 消息回调函数
  */
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  Serial.print(F("📩 收到 MQTT 消息 ["));
+  Serial.print(F(" 收到 MQTT 消息 ["));
   Serial.print(topic);
   Serial.print(F("]: "));
 
@@ -402,7 +399,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   DeserializationError error = deserializeJson(doc, message);
 
   if (error) {
-    Serial.print(F("❌ JSON 解析失败: "));
+    Serial.print(F(" JSON 解析失败: "));
     Serial.println(error.c_str());
     return;
   }
@@ -415,7 +412,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     int order_id = doc["order_id"];
     float balance = doc["balance"];
 
-    Serial.print(F("🔓 收到开锁指令，订单 ID: "));
+    Serial.print(F(" 收到开锁指令，订单 ID: "));
     Serial.println(order_id);
 
     // 更新状态
@@ -437,7 +434,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     float new_balance = doc["new_balance"];
     int duration = doc["duration_minutes"];
 
-    Serial.print(F("🔒 收到关锁指令，费用: "));
+    Serial.print(F(" 收到关锁指令，费用: "));
     Serial.print(cost);
     Serial.println(F(" 元"));
 
@@ -483,7 +480,7 @@ void loopGPS() {
   static unsigned long lastGPSCheck = 0;
   if (millis() - lastGPSCheck > 60000) {  // 每分钟检查一次
     if (gps.charsProcessed() < 10) {
-      Serial.println(F("⚠️  警告: GPS 未接收到数据，请检查接线"));
+      Serial.println(F("  警告: GPS 未接收到数据"));
       gpsValid = false;
     }
     lastGPSCheck = millis();
@@ -513,7 +510,7 @@ void loopRFID() {
 
   // 获取卡片 UID
   String cardUID = getRFIDUID();
-  Serial.print(F("📇 检测到卡片: "));
+  Serial.print(F(" 检测到卡片: "));
   Serial.println(cardUID);
 
   // 播放提示音
@@ -528,7 +525,7 @@ void loopRFID() {
     if (cardUID == currentCardUID) {
       handleLockRequest(cardUID);
     } else {
-      Serial.println(F("⚠️  警告: 卡片不匹配"));
+      Serial.println(F("  警告: 卡片不匹配"));
       displayMessage = "卡片不匹配";
       displaySubMessage = "请使用原卡片";
       playBeep(3, 50); // 错误提示音
@@ -547,7 +544,7 @@ void loopRFID() {
  * 处理开锁请求
  */
 void handleUnlockRequest(String cardUID) {
-  Serial.println(F("🔓 处理开锁请求..."));
+  Serial.println(F(" 处理开锁请求..."));
 
   // 更新状态
   currentState = STATE_PROCESSING;
@@ -565,7 +562,7 @@ void handleUnlockRequest(String cardUID) {
  * 处理还车请求
  */
 void handleLockRequest(String cardUID) {
-  Serial.println(F("🔒 处理还车请求..."));
+  Serial.println(F(" 处理还车请求..."));
 
   // 更新状态
   currentState = STATE_PROCESSING;
@@ -574,24 +571,7 @@ void handleLockRequest(String cardUID) {
   displayMessage = "结算中...";
   displaySubMessage = "请稍候";
 
-  // 发送还车请求到后端 API
-  // 注意：这里应该调用后端的 /api/orders/lock 接口
-  // 为简化，这里直接通过 MQTT 发送（实际项目中应该通过 HTTP API）
-
-  StaticJsonDocument<256> doc;
-  doc["action"] = "lock";
-  doc["order_id"] = currentOrderID;
-  doc["rfid_card"] = cardUID;
-  doc["end_lat"] = currentLat;
-  doc["end_lng"] = currentLng;
-
-  String message;
-  serializeJson(doc, message);
-
-  // 实际项目中这里应该发送 HTTP POST 请求
-  // mqttClient.publish("bike/001/lock", message.c_str());
-
-  Serial.println(F("⚠️  注意: 还车功能需要后端 API 支持"));
+  
   currentState = STATE_IDLE;
 }
 
@@ -601,12 +581,12 @@ void handleLockRequest(String cardUID) {
  * 发送认证请求到后端 API
  */
 void sendAuthRequest(String action, String cardUID) {
-  Serial.println(F("🌐 发送 HTTP 请求..."));
+  Serial.println(F(" 发送 HTTP 请求..."));
 
   // 连接后端服务器
   WiFiClient client;
   if (!client.connect(API_SERVER, API_PORT)) {
-    Serial.println(F("❌ 无法连接到后端服务器"));
+    Serial.println(F(" 无法连接到后端服务器"));
     displayMessage = "连接失败";
     displaySubMessage = "请检查网络";
     currentState = STATE_IDLE;
@@ -629,14 +609,14 @@ void sendAuthRequest(String action, String cardUID) {
                String("Content-Length: ") + postData.length() + "\r\n\r\n" +
                postData);
 
-  Serial.println(F("📤 请求已发送"));
+  Serial.println(F(" 请求已发送"));
 
   // 处理响应
   bool success = processServerResponse(client);
   client.stop();
 
   if (!success) {
-    Serial.println(F("❌ 认证失败"));
+    Serial.println(F(" 认证失败"));
     displayMessage = "认证失败";
     displaySubMessage = "请重试";
     playBeep(3, 50);
@@ -655,7 +635,7 @@ bool processServerResponse(WiFiClient& client) {
   unsigned long timeout = millis();
   while (client.available() == 0) {
     if (millis() - timeout > 5000) {
-      Serial.println(F("❌ 请求超时"));
+      Serial.println(F(" 请求超时"));
       return false;
     }
   }
@@ -672,7 +652,7 @@ bool processServerResponse(WiFiClient& client) {
 
   // 读取响应体
   String responseBody = client.readString();
-  Serial.println(F("📥 收到响应:"));
+  Serial.println(F(" 收到响应:"));
   Serial.println(responseBody);
 
   // 解析 JSON
@@ -680,7 +660,7 @@ bool processServerResponse(WiFiClient& client) {
   DeserializationError error = deserializeJson(doc, responseBody);
 
   if (error) {
-    Serial.print(F("❌ JSON 解析失败: "));
+    Serial.print(F(" JSON 解析失败: "));
     Serial.println(error.c_str());
     return false;
   }
@@ -689,7 +669,7 @@ bool processServerResponse(WiFiClient& client) {
   bool success = doc["success"];
   if (!success) {
     const char* message = doc["message"];
-    Serial.print(F("❌ 服务器返回错误: "));
+    Serial.print(F(" 服务器返回错误: "));
     Serial.println(message);
     displayMessage = message;
     return false;
@@ -700,7 +680,7 @@ bool processServerResponse(WiFiClient& client) {
   currentBalance = doc["balance"];
   currentOrderID = doc["order_id"];
 
-  Serial.print(F("✅ 认证成功，订单 ID: "));
+  Serial.print(F(" 认证成功，订单 ID: "));
   Serial.println(currentOrderID);
 
   // 更新状态
@@ -734,9 +714,9 @@ void sendHeartbeat() {
   serializeJson(doc, message);
 
   if (mqttClient.publish(TOPIC_HEARTBEAT, message.c_str())) {
-    Serial.println(F("💓 心跳包已发送"));
+    Serial.println(F(" 心跳包已发送"));
   } else {
-    Serial.println(F("❌ 心跳包发送失败"));
+    Serial.println(F(" 心跳包发送失败"));
   }
 }
 
@@ -754,12 +734,12 @@ void sendGPSReport() {
   serializeJson(doc, message);
 
   if (mqttClient.publish(TOPIC_GPS, message.c_str())) {
-    Serial.print(F("📍 GPS 已上报: "));
+    Serial.print(F(" GPS 已上报: "));
     Serial.print(currentLat, 6);
     Serial.print(F(", "));
     Serial.println(currentLng, 6);
   } else {
-    Serial.println(F("❌ GPS 上报失败"));
+    Serial.println(F(" GPS 上报失败"));
   }
 }
 
@@ -951,3 +931,21 @@ String formatFloat(float value, int decimals) {
   result = buffer;
   return result;
 }
+// 发送还车请求到后端 API
+  // 注意：这里应该调用后端的 /api/orders/lock 接口
+  // 为简化，这里直接通过 MQTT 发送（实际项目中应该通过 HTTP API）
+
+  StaticJsonDocument<256> doc;
+  doc["action"] = "lock";
+  doc["order_id"] = currentOrderID;
+  doc["rfid_card"] = cardUID;
+  doc["end_lat"] = currentLat;
+  doc["end_lng"] = currentLng;
+
+  String message;
+  serializeJson(doc, message);
+
+  // 实际项目中这里应该发送 HTTP POST 请求
+  // mqttClient.publish("bike/001/lock", message.c_str());
+
+  Serial.println(F("  注意: 还车功能需要后端 API 支持"));
