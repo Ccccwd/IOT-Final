@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(pip show:*)",
+      "Bash(where:*)",
+      "Bash(pip install:*)",
+      "Bash(uv venv:*)",
+      "Bash(.venv/Scripts/pip:*)",
+      "Bash(.venv\\Scripts\\pip:*)",
+      "Bash(uv pip install:*)",
+      "Bash(dir:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker pull:*)",
+      "Bash(move mysql_init.sql dockermysql_init.sql)",
+      "Bash(docker-compose:*)",
+      "Bash(npm create vite:*)",
+      "Bash(npm install:*)",
+      "Bash(docker exec:*)",
+      "Bash(python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

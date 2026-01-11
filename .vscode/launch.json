@@ -1,0 +1,52 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "启动后端服务 (FastAPI)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "main:app",
+        "--reload",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "启动前端服务 (React + Vite)",
+      "type": "node",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/frontend",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "同时启动前后端服务",
+      "type": "node",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/frontend",
+      "console": "integratedTerminal",
+      "dependsOn": [
+        "启动后端服务 (FastAPI)"
+      ]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "启动全部服务",
+      "configurations": [
+        "启动后端服务 (FastAPI)",
+        "启动前端服务 (React + Vite)"
+      ],
+      "stopAll": true
+    }
+  ]
+}
