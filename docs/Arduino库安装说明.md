@@ -2,7 +2,7 @@
 
 ## 📚 项目必需的库列表
 
-本 ESP8266 固件需要安装以下 5 个核心库：
+本 ESP8266 固件需要安装以下 6 个核心库：
 
 | 库名称 | 版本要求 | 用途 | 作者 |
 |--------|---------|------|------|
@@ -10,7 +10,8 @@
 | **ArduinoJson** | 6.21.0+ | JSON 数据处理 | Benoit Blanchon |
 | **MFRC522** | 1.4.10+ | RFID 读卡器驱动 | miguelbalboa |
 | **TinyGPSPlus** | 1.0.3+ | GPS NMEA 数据解析 | Mikal Hart |
-| **U8g2** | 2.34.0+ | OLED 显示屏驱动 | olikraus |
+| **Adafruit GFX Library** | 1.11.0+ | 图形绘制库（核心库） | Adafruit |
+| **Adafruit SSD1306** | 2.5.7+ | OLED 显示屏驱动 | Adafruit |
 
 ---
 
@@ -109,21 +110,39 @@
 
 ---
 
-### 5️⃣ 安装 U8g2
+### 5️⃣ 安装 Adafruit GFX Library
 
-**搜索**：`U8g2`
+**搜索**：`Adafruit GFX`
 
 **操作**：
-1. 在搜索框输入 "U8g2"
-2. 找到 `U8g2 for Arduino` by olikraus
+1. 在搜索框输入 "Adafruit GFX"
+2. 找到 `Adafruit GFX Library` by Adafruit
 3. 点击 `安装` 按钮
-4. 选择 `最新版本`（推荐 2.34.0 或更高）
-5. 在弹出的对话框中选择 `安装所有`
-6. 等待安装完成（可能需要几分钟，库较大）
+4. 选择 `最新版本`（推荐 1.11.0 或更高）
+5. 等待安装完成
 
-**⚠️ 安装选项说明**：
-- `安装所有`：包含所有字体和图形函数（推荐）
-- `仅安装库文件`：不包含示例和字体（节省空间）
+**说明**：
+- 这是 Adafruit 图形库的核心库
+- 提供了基本的绘图功能（点、线、圆、矩形等）
+- 必须先安装此库，再安装 SSD1306 库
+
+---
+
+### 6️⃣ 安装 Adafruit SSD1306
+
+**搜索**：`Adafruit SSD1306`
+
+**操作**：
+1. 在搜索框输入 "Adafruit SSD1306"
+2. 找到 `Adafruit SSD1306` by Adafruit
+3. 点击 `安装` 按钮
+4. 选择 `最新版本`（推荐 2.5.7 或更高）
+5. 等待安装完成
+
+**⚠️ 重要提示**：
+- 必须先安装 `Adafruit GFX Library` 才能使用此库
+- 此库专门用于 SSD1306 OLED 显示屏驱动
+- 支持 SPI 和 I2C 两种接口
 
 ---
 
@@ -141,7 +160,8 @@
 | ArduinoJson | https://github.com/bblanchon/ArduinoJson |
 | MFRC522 | https://github.com/miguelbalboa/rfid |
 | TinyGPSPlus | https://github.com/mikalhart/TinyGPSPlus |
-| U8g2 | https://github.com/olikraus/U8g2_Arduino |
+| Adafruit GFX | https://github.com/adafruit/Adafruit-GFX-Library |
+| Adafruit SSD1306 | https://github.com/adafruit/Adafruit_SSD1306 |
 
 **下载步骤**：
 1. 打开上面的链接
@@ -189,7 +209,8 @@ git clone https://github.com/knolleary/pubsubclient.git PubSubClient
 git clone https://github.com/bblanchon/ArduinoJson.git ArduinoJson
 git clone https://github.com/miguelbalboa/rfid.git MFRC522
 git clone https://github.com/mikalhart/TinyGPSPlus.git TinyGPSPlus
-git clone https://github.com/olikraus/U8g2_Arduino.git U8g2
+git clone https://github.com/adafruit/Adafruit-GFX-Library.git Adafruit_GFX
+git clone https://github.com/adafruit/Adafruit_SSD1306.git Adafruit_SSD1306
 ```
 
 ### Linux / Mac
@@ -203,7 +224,8 @@ git clone https://github.com/knolleary/pubsubclient.git PubSubClient
 git clone https://github.com/bblanchon/ArduinoJson.git ArduinoJson
 git clone https://github.com/miguelbalboa/rfid.git MFRC522
 git clone https://github.com/mikalhart/TinyGPSPlus.git TinyGPSPlus
-git clone https://github.com/olikraus/U8g2_Arduino.git U8g2
+git clone https://github.com/adafruit/Adafruit-GFX-Library.git Adafruit_GFX
+git clone https://github.com/adafruit/Adafruit_SSD1306.git Adafruit_SSD1306
 ```
 
 ---
@@ -225,7 +247,8 @@ git clone https://github.com/olikraus/U8g2_Arduino.git U8g2
 #include <SPI.h>
 #include <MFRC522.h>
 #include <TinyGPS++.h>
-#include <U8g2lib.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
 void setup() {
   Serial.begin(9600);
@@ -251,11 +274,20 @@ void setup() {
   TinyGPSPlus gps;
   Serial.println("   TinyGPSPlus 对象创建成功");
 
-  Serial.println("\n✅ U8g2 已安装");
-  U8G2_SSD1306_128X64_NONAME_F_4W_SW_SPI u8g2(
-    U8G2_R0, 5, 14, 15, 2, 16
-  );
-  Serial.println("   U8g2 对象创建成功");
+  Serial.println("\n✅ Adafruit GFX 已安装");
+  Serial.println("   Adafruit GFX 库已加载");
+
+  Serial.println("\n✅ Adafruit SSD1306 已安装");
+  #define SCREEN_WIDTH 128
+  #define SCREEN_HEIGHT 64
+  #define OLED_MOSI 14
+  #define OLED_CLK 5
+  #define OLED_DC 2
+  #define OLED_RESET 16
+  #define OLED_CS 15
+  Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
+    OLED_CLK, OLED_MOSI, OLED_DC, OLED_RESET, OLED_CS);
+  Serial.println("   Adafruit SSD1306 对象创建成功");
 
   Serial.println("\n=================================");
   Serial.println("所有库安装成功！");
@@ -293,8 +325,11 @@ void loop() {
 ✅ TinyGPSPlus 已安装
    TinyGPSPlus 对象创建成功
 
-✅ U8g2 已安装
-   U8g2 对象创建成功
+✅ Adafruit GFX 已安装
+   Adafruit GFX 库已加载
+
+✅ Adafruit SSD1306 已安装
+   Adafruit SSD1306 对象创建成功
 
 =================================
 所有库安装成功！
@@ -340,29 +375,38 @@ error: 'class ArduinoJson::JsonDocument' has no member 'gc'
 
 ---
 
-### 问题 3：U8g2 编译后内存不足
+### 问题 3：Adafruit SSD1306 显示屏不显示
 
 **症状**：
-```
-Sketch uses 120% of program storage space
-```
+- 编译成功但屏幕全黑或全白
+- 显示内容有乱码
 
-**原因**：U8g2 库启用了太多字体
+**原因**：
+- OLED_RESET引脚配置错误
+- 未正确调用 display.display()
 
 **解决方案**：
 
-在 `firmware/bike_firmware.ino` 开头添加：
+确保在代码中正确初始化和刷新显示：
 
 ```cpp
-// 禁用不需要的字体以节省内存
-#define U8G2_USE_LARGE_FONTS 0
+// 初始化
+display.begin(SSD1306_SWITCHCAPVCC);
+
+// 清除缓冲区
+display.clearDisplay();
+
+// 绘制内容
+display.setTextSize(1);
+display.setTextColor(SSD1306_WHITE);
+display.setCursor(0, 0);
+display.println("Hello World");
+
+// 刷新显示（非常重要！）
+display.display();
 ```
 
-或者只安装 U8g2 库文件，不安装示例：
-
-```
-工具 → 管理库 → U8g2 → 安装 → 仅安装库文件
-```
+**注意**：每次绘制内容后，必须调用 `display.display()` 才能看到内容。
 
 ---
 
@@ -421,7 +465,8 @@ Board NodeMCU 1.0 (ESP-12E Module) isn't available
 | ArduinoJson | 6.15.0 | 6.21.0 | 7.0.0 | ⚠️ 6.x 兼容，7.x 不兼容 |
 | MFRC522 | 1.4.3 | 1.4.10+ | 1.4.10 | ✅ 完全兼容 |
 | TinyGPSPlus | 1.0.2 | 1.0.3+ | 1.0.3 | ✅ 完全兼容 |
-| U8g2 | 2.28.0 | 2.34.0+ | 2.35.0 | ✅ 完全兼容 |
+| Adafruit GFX | 1.10.0 | 1.11.0+ | 1.11.9 | ✅ 完全兼容 |
+| Adafruit SSD1306 | 2.5.0 | 2.5.7+ | 2.5.10 | ✅ 完全兼容 |
 
 ---
 
@@ -447,15 +492,6 @@ Board NodeMCU 1.0 (ESP-12E Module) isn't available
 // 使用 StaticJsonDocument 而非 DynamicJsonDocument
 StaticJsonDocument<256> doc;  // 分配在栈上，更快
 // DynamicJsonDocument doc(256);  // 分配在堆上，更灵活但更慢
-```
-
-### 优化 U8g2 内存
-
-只包含需要的字体：
-
-```cpp
-// 在 U8g2 构造函数中指定字体
-u8g2.setFont(u8g2_font_ncenB14_tr);  // 只加载这个字体
 ```
 
 ---
