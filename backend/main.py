@@ -1,4 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    status,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
@@ -9,16 +16,37 @@ import asyncio
 
 from database import engine, get_db
 from models import (
-    User, Bike, Order, BikeTrajectory, SystemLog,
-    BikeStatus, OrderStatus, LogType
+    User,
+    Bike,
+    Order,
+    BikeTrajectory,
+    SystemLog,
+    BikeStatus,
+    OrderStatus,
+    LogType,
 )
 from schemas import (
-    UserCreate, UserCreateWithCard, UserUpdate, UserResponse, UserTopup,
-    BindCardRequest, AutoRegisterRequest,
-    BikeCreate, BikeResponse, BikeListResponse, BikeUpdate,
-    OrderUnlock, OrderLock, OrderResponse, LockResponse,
-    RFIDAuthRequest, RFIDAuthResponse, HardwareUnlockRequest,
-    AdminCommand, DashboardStats, MessageResponse
+    UserCreate,
+    UserCreateWithCard,
+    UserUpdate,
+    UserResponse,
+    UserTopup,
+    BindCardRequest,
+    AutoRegisterRequest,
+    BikeCreate,
+    BikeResponse,
+    BikeListResponse,
+    BikeUpdate,
+    OrderUnlock,
+    OrderLock,
+    OrderResponse,
+    LockResponse,
+    RFIDAuthRequest,
+    RFIDAuthResponse,
+    HardwareUnlockRequest,
+    AdminCommand,
+    DashboardStats,
+    MessageResponse,
 )
 from mqtt_handler import mqtt_client
 from config import settings
@@ -32,8 +60,7 @@ from mqtt_message_handler import setup_mqtt_subscriptions
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -41,7 +68,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="智能共享单车管理系统 API",
     description="基于 FastAPI + MySQL + MQTT 的共享单车后端服务",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # 配置 CORS
@@ -55,6 +82,7 @@ app.add_middleware(
 
 
 # ========== 启动和关闭事件 ==========
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -94,13 +122,14 @@ async def shutdown_event():
 
 # ========== 基础路由 ==========
 
+
 @app.get("/")
 async def root():
     """根路径"""
     return {
         "message": "智能共享单车管理系统 API",
         "version": "1.0.0",
-        "status": "running"
+        "status": "running",
     }
 
 
@@ -110,11 +139,12 @@ async def health_check():
     return {
         "status": "healthy",
         "mqtt_connected": mqtt_client.connected,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
 
 
 # ========== 用户相关 API ==========
+
 
 @app.post("/api/auth/register", response_model=UserResponse, tags=["用户认证"])
 async def register_user(user: UserCreate, db: Session = Depends(get_db)):
@@ -123,7 +153,7 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = User(
         username=user.username,
         phone=user.phone,
-        balance=Decimal(str(user.balance)) if user.balance else Decimal("50.00")
+        balance=Decimal(str(user.balance)) if user.balance else Decimal("50.00"),
     )
     db.add(db_user)
     db.commit()
@@ -133,15 +163,18 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
     return db_user
 
 
-@app.post("/api/auth/register-with-card", response_model=UserResponse, tags=["用户认证"])
-async def register_user_with_card(user: UserCreateWithCard, db: Session = Depends(get_db)):
+@app.post(
+    "/api/auth/register-with-card", response_model=UserResponse, tags=["用户认证"]
+)
+async def register_user_with_card(
+    user: UserCreateWithCard, db: Session = Depends(get_db)
+):
     """注册新用户并绑定卡号"""
     # 检查 RFID 卡是否已存在
     existing_user = db.query(User).filter(User.rfid_card == user.rfid_card).first()
     if existing_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="RFID 卡已被绑定"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="RFID 卡已被绑定"
         )
 
     # 创建新用户并绑定卡号
@@ -149,7 +182,7 @@ async def register_user_with_card(user: UserCreateWithCard, db: Session = Depend
         rfid_card=user.rfid_card,
         username=user.username,
         phone=user.phone,
-        balance=Decimal(str(user.balance)) if user.balance else Decimal("50.00")
+        balance=Decimal(str(user.balance)) if user.balance else Decimal("50.00"),
     )
     db.add(db_user)
     db.commit()
@@ -164,10 +197,7 @@ async def topup_balance(topup: UserTopup, db: Session = Depends(get_db)):
     """用户充值"""
     db_user = db.query(User).filter(User.id == topup.user_id).first()
     if not db_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
     # 更新余额
     db_user.balance += Decimal(str(topup.amount))
@@ -190,27 +220,19 @@ async def get_user(user_id: int, db: Session = Depends(get_db)):
     """获取用户详情"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
     return user
 
 
 @app.put("/api/users/{user_id}", response_model=UserResponse, tags=["用户管理"])
 async def update_user(
-    user_id: int,
-    user_update: UserUpdate,
-    db: Session = Depends(get_db)
+    user_id: int, user_update: UserUpdate, db: Session = Depends(get_db)
 ):
     """更新用户信息（不包括RFID卡号）"""
     # 检查用户是否存在
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
     # 更新字段（只更新提供的字段）
     update_data = user_update.dict(exclude_unset=True)
@@ -224,30 +246,30 @@ async def update_user(
     return user
 
 
-@app.post("/api/users/{user_id}/bind-card", response_model=UserResponse, tags=["用户管理"])
-async def bind_card(user_id: int, request: BindCardRequest, db: Session = Depends(get_db)):
+@app.post(
+    "/api/users/{user_id}/bind-card", response_model=UserResponse, tags=["用户管理"]
+)
+async def bind_card(
+    user_id: int, request: BindCardRequest, db: Session = Depends(get_db)
+):
     """为用户绑定 RFID 卡"""
     # 检查用户是否存在
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
     # 检查用户是否已绑定卡
     if user.rfid_card:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="用户已绑定卡片，如需更换请联系管理员"
+            detail="用户已绑定卡片，如需更换请联系管理员",
         )
 
     # 检查卡是否已被其他用户绑定
     existing_card = db.query(User).filter(User.rfid_card == request.rfid_card).first()
     if existing_card:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="该卡已被其他用户绑定"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="该卡已被其他用户绑定"
         )
 
     # 绑定卡号
@@ -272,7 +294,7 @@ async def auto_register(request: AutoRegisterRequest, db: Session = Depends(get_
     db_user = User(
         rfid_card=request.rfid_card,
         username=request.username or f"用户_{request.rfid_card[-4:]}",
-        balance=Decimal(str(request.initial_balance))
+        balance=Decimal(str(request.initial_balance)),
     )
     db.add(db_user)
     db.commit()
@@ -284,12 +306,10 @@ async def auto_register(request: AutoRegisterRequest, db: Session = Depends(get_
 
 # ========== 车辆相关 API ==========
 
+
 @app.get("/api/bikes", response_model=BikeListResponse, tags=["车辆管理"])
 async def get_bikes(
-    skip: int = 0,
-    limit: int = 100,
-    status: str = None,
-    db: Session = Depends(get_db)
+    skip: int = 0, limit: int = 100, status: str = None, db: Session = Depends(get_db)
 ):
     """获取车辆列表"""
     query = db.query(Bike)
@@ -307,26 +327,20 @@ async def get_bike(bike_id: int, db: Session = Depends(get_db)):
     """获取车辆详情"""
     bike = db.query(Bike).filter(Bike.id == bike_id).first()
     if not bike:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="车辆不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="车辆不存在")
     return bike
 
 
-@app.patch("/api/bikes/{bike_id}/status", response_model=BikeResponse, tags=["车辆管理"])
+@app.patch(
+    "/api/bikes/{bike_id}/status", response_model=BikeResponse, tags=["车辆管理"]
+)
 async def update_bike_status(
-    bike_id: int,
-    bike_update: BikeUpdate,
-    db: Session = Depends(get_db)
+    bike_id: int, bike_update: BikeUpdate, db: Session = Depends(get_db)
 ):
     """更新车辆状态"""
     bike = db.query(Bike).filter(Bike.id == bike_id).first()
     if not bike:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="车辆不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="车辆不存在")
 
     # 更新字段
     update_data = bike_update.dict(exclude_unset=True)
@@ -342,10 +356,7 @@ async def update_bike_status(
 
 @app.get("/api/bikes/{bike_id}/trajectory", tags=["车辆管理"])
 async def get_bike_trajectory(
-    bike_id: int,
-    order_id: int = None,
-    limit: int = 100,
-    db: Session = Depends(get_db)
+    bike_id: int, order_id: int = None, limit: int = 100, db: Session = Depends(get_db)
 ):
     """获取车辆轨迹"""
     query = db.query(BikeTrajectory).filter(BikeTrajectory.bike_id == bike_id)
@@ -358,17 +369,20 @@ async def get_bike_trajectory(
 
 # ========== 订单相关 API ==========
 
+
 @app.post("/api/hardware/unlock", tags=["硬件接口"])
-async def hardware_unlock(request: HardwareUnlockRequest, db: Session = Depends(get_db)):
+async def hardware_unlock(
+    request: HardwareUnlockRequest, db: Session = Depends(get_db)
+):
     """硬件端开锁接口（自动匹配车辆）"""
     # 1. 根据车辆编号查找车辆
     bike = db.query(Bike).filter(Bike.bike_code == request.bike_code).first()
     if not bike:
         return {
             "success": False,
-            "message": f"车辆 {request.bike_code} 不存在，请先在系统中注册车辆"
+            "message": f"车辆 {request.bike_code} 不存在，请先在系统中注册车辆",
         }
-    
+
     # 2. 查找用户（如果不存在则自动注册）
     user = db.query(User).filter(User.rfid_card == request.rfid_card).first()
     if not user:
@@ -377,27 +391,24 @@ async def hardware_unlock(request: HardwareUnlockRequest, db: Session = Depends(
             rfid_card=request.rfid_card,
             username=f"用户_{request.rfid_card[-4:]}",
             phone="",
-            balance=Decimal("50.00")
+            balance=Decimal("50.00"),
         )
         db.add(user)
         db.commit()
         db.refresh(user)
         logger.info(f"自动注册新用户: RFID={request.rfid_card}, ID={user.id}")
-    
+
     # 3. 检查余额
     if user.balance < Decimal(str(settings.MIN_BALANCE)):
         return {
             "success": False,
-            "message": f"余额不足，当前余额: {float(user.balance):.2f} 元，最低需要 {settings.MIN_BALANCE} 元"
+            "message": f"余额不足，当前余额: {float(user.balance):.2f} 元，最低需要 {settings.MIN_BALANCE} 元",
         }
-    
+
     # 4. 检查车辆状态
     if bike.status != BikeStatus.IDLE.value:
-        return {
-            "success": False,
-            "message": f"车辆正在使用中，当前状态: {bike.status}"
-        }
-    
+        return {"success": False, "message": f"车辆正在使用中，当前状态: {bike.status}"}
+
     # 5. 创建订单
     order = Order(
         user_id=user.id,
@@ -405,29 +416,31 @@ async def hardware_unlock(request: HardwareUnlockRequest, db: Session = Depends(
         start_time=datetime.now(),
         start_lat=request.lat,
         start_lng=request.lng,
-        status=OrderStatus.ACTIVE.value
+        status=OrderStatus.ACTIVE.value,
     )
     db.add(order)
-    
+
     # 6. 更新车辆状态
     bike.status = BikeStatus.RIDING.value
-    bike.current_lat=request.lat
+    bike.current_lat = request.lat
     bike.current_lng = request.lng
-    
+
     db.commit()
     db.refresh(order)
-    
+
     # 7. 发送 MQTT 开锁指令
     mqtt_client.publish_command(bike.id, "unlock", order.id)
-    
-    logger.info(f"硬件开锁成功: 用户={request.rfid_card}, 车辆={bike.bike_code}, 订单={order.id}")
-    
+
+    logger.info(
+        f"硬件开锁成功: 用户={request.rfid_card}, 车辆={bike.bike_code}, 订单={order.id}"
+    )
+
     return {
         "success": True,
         "message": "开锁成功",
         "user_id": user.id,
         "balance": float(user.balance),
-        "order_id": order.id
+        "order_id": order.id,
     }
 
 
@@ -437,31 +450,25 @@ async def unlock_bike(unlock: OrderUnlock, db: Session = Depends(get_db)):
     # 查找用户
     user = db.query(User).filter(User.rfid_card == unlock.rfid_card).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
     # 检查余额
     if user.balance < settings.MIN_BALANCE:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"余额不足，最低需要 {settings.MIN_BALANCE} 元"
+            detail=f"余额不足，最低需要 {settings.MIN_BALANCE} 元",
         )
 
     # 查找车辆
     bike = db.query(Bike).filter(Bike.id == unlock.bike_id).first()
     if not bike:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="车辆不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="车辆不存在")
 
     # 检查车辆状态
     if bike.status != BikeStatus.IDLE.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"车辆状态不是空闲，当前状态: {bike.status}"
+            detail=f"车辆状态不是空闲，当前状态: {bike.status}",
         )
 
     # 创建订单
@@ -471,7 +478,7 @@ async def unlock_bike(unlock: OrderUnlock, db: Session = Depends(get_db)):
         start_time=datetime.now(),
         start_lat=unlock.lat,
         start_lng=unlock.lng,
-        status=OrderStatus.ACTIVE.value
+        status=OrderStatus.ACTIVE.value,
     )
     db.add(order)
 
@@ -486,7 +493,9 @@ async def unlock_bike(unlock: OrderUnlock, db: Session = Depends(get_db)):
     # 发送 MQTT 开锁指令
     mqtt_client.publish_command(bike.id, "unlock", order.id)
 
-    logger.info(f"开锁成功: 用户={unlock.rfid_card}, 车辆={bike.bike_code}, 订单={order.id}")
+    logger.info(
+        f"开锁成功: 用户={unlock.rfid_card}, 车辆={bike.bike_code}, 订单={order.id}"
+    )
     return order
 
 
@@ -496,24 +505,20 @@ async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
     # 查找订单
     order = db.query(Order).filter(Order.id == lock.order_id).first()
     if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="订单不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
     # 验证用户
     user = db.query(User).filter(User.rfid_card == lock.rfid_card).first()
     if not user or user.id != order.user_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="用户信息不匹配"
+            status_code=status.HTTP_403_FORBIDDEN, detail="用户信息不匹配"
         )
 
     # 检查订单状态
     if order.status != OrderStatus.ACTIVE.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"订单状态错误，当前状态: {order.status}"
+            detail=f"订单状态错误，当前状态: {order.status}",
         )
 
     # 计算骑行时长（分钟）
@@ -527,7 +532,7 @@ async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
     if user.balance < cost:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"余额不足，本次消费 {cost} 元，当前余额 {user.balance} 元"
+            detail=f"余额不足，本次消费 {cost} 元，当前余额 {user.balance} 元",
         )
 
     # 更新订单
@@ -553,23 +558,22 @@ async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
     # 发送 MQTT 关锁指令
     mqtt_client.publish_command(bike.id, "lock")
 
-    logger.info(f"还车成功: 用户={lock.rfid_card}, 车辆={bike.bike_code}, 时长={duration_minutes}分钟, 费用={cost}元")
+    logger.info(
+        f"还车成功: 用户={lock.rfid_card}, 车辆={bike.bike_code}, 时长={duration_minutes}分钟, 费用={cost}元"
+    )
 
     return LockResponse(
         success=True,
         duration_minutes=duration_minutes,
         cost=cost,
         new_balance=float(user.balance),
-        message="还车成功"
+        message="还车成功",
     )
 
 
 @app.get("/api/orders", response_model=List[OrderResponse], tags=["订单管理"])
 async def get_orders(
-    skip: int = 0,
-    limit: int = 100,
-    user_id: int = None,
-    db: Session = Depends(get_db)
+    skip: int = 0, limit: int = 100, user_id: int = None, db: Session = Depends(get_db)
 ):
     """获取订单列表"""
     query = db.query(Order)
@@ -585,14 +589,12 @@ async def get_order(order_id: int, db: Session = Depends(get_db)):
     """获取订单详情"""
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="订单不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
     return order
 
 
 # ========== 认证 API（硬件端调用）==========
+
 
 @app.post("/api/auth/validate-card", response_model=RFIDAuthResponse, tags=["硬件认证"])
 async def validate_card(auth: RFIDAuthRequest, db: Session = Depends(get_db)):
@@ -602,38 +604,23 @@ async def validate_card(auth: RFIDAuthRequest, db: Session = Depends(get_db)):
 
     if not user:
         # 发送认证失败响应
-        mqtt_client.publish_response(
-            auth.bike_id,
-            success=False,
-            message="卡未注册"
-        )
-        return RFIDAuthResponse(
-            success=False,
-            message="卡未注册"
-        )
+        mqtt_client.publish_response(auth.bike_id, success=False, message="卡未注册")
+        return RFIDAuthResponse(success=False, message="卡未注册")
 
     # 检查用户状态
     if user.status != "active":
-        mqtt_client.publish_response(
-            auth.bike_id,
-            success=False,
-            message="账户已冻结"
-        )
-        return RFIDAuthResponse(
-            success=False,
-            message="账户已冻结"
-        )
+        mqtt_client.publish_response(auth.bike_id, success=False, message="账户已冻结")
+        return RFIDAuthResponse(success=False, message="账户已冻结")
 
     # 检查余额
     if user.balance < settings.MIN_BALANCE:
         mqtt_client.publish_response(
             auth.bike_id,
             success=False,
-            message=f"余额不足，最低需要 {settings.MIN_BALANCE} 元"
+            message=f"余额不足，最低需要 {settings.MIN_BALANCE} 元",
         )
         return RFIDAuthResponse(
-            success=False,
-            message=f"余额不足，最低需要 {settings.MIN_BALANCE} 元"
+            success=False, message=f"余额不足，最低需要 {settings.MIN_BALANCE} 元"
         )
 
     # 处理开锁或还车
@@ -642,21 +629,16 @@ async def validate_card(auth: RFIDAuthRequest, db: Session = Depends(get_db)):
         bike = db.query(Bike).filter(Bike.id == auth.bike_id).first()
         if not bike or bike.status != BikeStatus.IDLE.value:
             mqtt_client.publish_response(
-                auth.bike_id,
-                success=False,
-                message="车辆不可用"
+                auth.bike_id, success=False, message="车辆不可用"
             )
-            return RFIDAuthResponse(
-                success=False,
-                message="车辆不可用"
-            )
+            return RFIDAuthResponse(success=False, message="车辆不可用")
 
         # 创建订单
         order = Order(
             user_id=user.id,
             bike_id=auth.bike_id,
             start_time=datetime.now(),
-            status=OrderStatus.ACTIVE.value
+            status=OrderStatus.ACTIVE.value,
         )
         db.add(order)
 
@@ -671,7 +653,7 @@ async def validate_card(auth: RFIDAuthRequest, db: Session = Depends(get_db)):
             success=True,
             message="开锁成功",
             balance=float(user.balance),
-            order_id=order.id
+            order_id=order.id,
         )
 
         return RFIDAuthResponse(
@@ -679,27 +661,26 @@ async def validate_card(auth: RFIDAuthRequest, db: Session = Depends(get_db)):
             message="开锁成功",
             user_id=user.id,
             balance=float(user.balance),
-            order_id=order.id
+            order_id=order.id,
         )
 
     elif auth.action == "lock":
         # 查找进行中的订单
-        order = db.query(Order).filter(
-            Order.user_id == user.id,
-            Order.bike_id == auth.bike_id,
-            Order.status == OrderStatus.ACTIVE.value
-        ).first()
+        order = (
+            db.query(Order)
+            .filter(
+                Order.user_id == user.id,
+                Order.bike_id == auth.bike_id,
+                Order.status == OrderStatus.ACTIVE.value,
+            )
+            .first()
+        )
 
         if not order:
             mqtt_client.publish_response(
-                auth.bike_id,
-                success=False,
-                message="未找到进行中的订单"
+                auth.bike_id, success=False, message="未找到进行中的订单"
             )
-            return RFIDAuthResponse(
-                success=False,
-                message="未找到进行中的订单"
-            )
+            return RFIDAuthResponse(success=False, message="未找到进行中的订单")
 
         # 计算费用
         duration_minutes = int((datetime.now() - order.start_time).total_seconds() / 60)
@@ -722,31 +703,26 @@ async def validate_card(auth: RFIDAuthRequest, db: Session = Depends(get_db)):
 
         # 发送认证成功响应
         mqtt_client.publish_response(
-            auth.bike_id,
-            success=True,
-            message="还车成功",
-            balance=float(user.balance)
+            auth.bike_id, success=True, message="还车成功", balance=float(user.balance)
         )
 
         return RFIDAuthResponse(
             success=True,
             message="还车成功",
             user_id=user.id,
-            balance=float(user.balance)
+            balance=float(user.balance),
         )
 
 
 # ========== 管理员 API ==========
+
 
 @app.post("/api/admin/command", response_model=MessageResponse, tags=["管理员"])
 async def admin_command(command: AdminCommand, db: Session = Depends(get_db)):
     """管理员远程控制"""
     bike = db.query(Bike).filter(Bike.id == command.bike_id).first()
     if not bike:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="车辆不存在"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="车辆不存在")
 
     # 发送控制指令
     mqtt_client.publish_command(bike.id, command.command)
@@ -755,7 +731,7 @@ async def admin_command(command: AdminCommand, db: Session = Depends(get_db)):
     log = SystemLog(
         bike_id=bike.id,
         log_type=LogType.AUTH.value,
-        message=f"管理员远程操作: {command.command}, 原因: {command.reason}"
+        message=f"管理员远程操作: {command.command}, 原因: {command.reason}",
     )
     db.add(log)
     db.commit()
@@ -778,14 +754,12 @@ async def get_dashboard(db: Session = Depends(get_db)):
 
     # 今日订单统计
     today = datetime.now().date()
-    today_orders = db.query(Order).filter(
-        func.date(Order.created_at) == today
-    ).count()
+    today_orders = db.query(Order).filter(func.date(Order.created_at) == today).count()
 
     # 今日收入
     today_revenue = db.query(func.sum(Order.cost)).filter(
         func.date(Order.created_at) == today,
-        Order.status == OrderStatus.COMPLETED.value
+        Order.status == OrderStatus.COMPLETED.value,
     ).scalar() or Decimal("0.00")
 
     return DashboardStats(
@@ -795,15 +769,12 @@ async def get_dashboard(db: Session = Depends(get_db)):
         fault_bikes=fault_bikes,
         total_users=total_users,
         today_orders=today_orders,
-        today_revenue=float(today_revenue)
+        today_revenue=float(today_revenue),
     )
 
 
 @app.get("/api/admin/statistics/trends", tags=["管理员"])
-async def get_statistics_trends(
-    days: int = 7,
-    db: Session = Depends(get_db)
-):
+async def get_statistics_trends(days: int = 7, db: Session = Depends(get_db)):
     """获取指定天数的统计数据趋势"""
     trends_data = []
 
@@ -811,29 +782,30 @@ async def get_statistics_trends(
         date = datetime.now().date() - timedelta(days=i)
 
         # 当天的订单数
-        order_count = db.query(Order).filter(
-            func.date(Order.created_at) == date
-        ).count()
+        order_count = (
+            db.query(Order).filter(func.date(Order.created_at) == date).count()
+        )
 
         # 当天的收入（只统计已完成的订单）
         revenue = db.query(func.sum(Order.cost)).filter(
             func.date(Order.created_at) == date,
-            Order.status == OrderStatus.COMPLETED.value
+            Order.status == OrderStatus.COMPLETED.value,
         ).scalar() or Decimal("0.00")
 
-        trends_data.append({
-            "date": date.strftime("%Y-%m-%d"),
-            "display_date": date.strftime("%m-%d"),
-            "order_count": order_count,
-            "revenue": float(revenue)
-        })
+        trends_data.append(
+            {
+                "date": date.strftime("%Y-%m-%d"),
+                "display_date": date.strftime("%m-%d"),
+                "order_count": order_count,
+                "revenue": float(revenue),
+            }
+        )
 
-    return {
-        "trends": trends_data
-    }
+    return {"trends": trends_data}
 
 
 # ========== WebSocket 端点 ==========
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -857,9 +829,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=False  # Windows 上禁用自动重载避免多进程问题
+        reload=False,  # Windows 上禁用自动重载避免多进程问题
     )

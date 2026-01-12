@@ -47,7 +47,7 @@ const char *TOPIC_COMMAND = "server/001/command";   // 服务器指令
 
 // 后端 API 配置
 const char *API_SERVER = "192.168.43.66"; // 后端服务器 IP（请修改）
-const int API_PORT = 8000;                 // API 端口
+const int API_PORT = 8000;                // API 端口
 
 // 引脚定义
 // RC522 RFID 引脚(硬件SPI)
@@ -715,13 +715,13 @@ void sendAuthRequest(String action, String cardUID)
     displayMessage = "连接失败";
     displaySubMessage = "后端未启动";
     currentState = STATE_IDLE;
-    playBeep(3, 50);  // 错误提示音
-    delay(3000);  // 显示3秒错误信息
+    playBeep(3, 50); // 错误提示音
+    delay(3000);     // 显示3秒错误信息
     displayMessage = "待机中";
     displaySubMessage = "请刷卡解锁";
     return;
   }
-  
+
   Serial.println(F("   ✓ 连接成功！"));
 
   // 构造 JSON 请求体
@@ -729,7 +729,7 @@ void sendAuthRequest(String action, String cardUID)
   doc["rfid_card"] = cardUID;
   doc["lat"] = currentLat;
   doc["lng"] = currentLng;
-  doc["bike_code"] = "001";  // 添加车辆编号
+  doc["bike_code"] = "001"; // 添加车辆编号
 
   String postData;
   serializeJson(doc, postData);
@@ -785,7 +785,7 @@ bool processServerResponse(WiFiClient &client)
   while (client.available())
   {
     String line = client.readStringUntil('\n');
-    line.trim();  // 去除前后空白字符
+    line.trim(); // 去除前后空白字符
     if (line.length() == 0)
     {
       // 空行表示头部结束
@@ -799,7 +799,7 @@ bool processServerResponse(WiFiClient &client)
   {
     responseBody += client.readString();
   }
-  
+
   Serial.println(F(" 收到响应:"));
   Serial.println(responseBody);
 
@@ -963,9 +963,12 @@ void updateOLEDIdle()
   display.setCursor(0, 13);
   display.setTextSize(1);
   display.print("WiFi: ");
-  if (WiFi.status() == WL_CONNECTED) {
+  if (WiFi.status() == WL_CONNECTED)
+  {
     display.println("OK");
-  } else {
+  }
+  else
+  {
     display.println("X");
   }
 
@@ -1062,20 +1065,20 @@ void updateOLEDProcessing()
   display.setTextSize(2);
   int16_t x, y1;
   uint16_t w, h;
-  display.getTextBounds((char*)displayMessage.c_str(), 0, 0, &x, &y1, &w, &h);
+  display.getTextBounds((char *)displayMessage.c_str(), 0, 0, &x, &y1, &w, &h);
   display.setCursor((SCREEN_WIDTH - w) / 2, 10);
   display.println(displayMessage.c_str());
 
   // 副消息 - 行 30 (居中，小字体)
   display.setTextSize(1);
-  display.getTextBounds((char*)displaySubMessage.c_str(), 0, 0, &x, &y1, &w, &h);
+  display.getTextBounds((char *)displaySubMessage.c_str(), 0, 0, &x, &y1, &w, &h);
   display.setCursor((SCREEN_WIDTH - w) / 2, 30);
   display.println(displaySubMessage.c_str());
 
   // 加载动画进度条 - 行 45
   static int progress = 0;
   progress = (progress + 10) % 100;
-  
+
   int barWidth = 100;
   int barHeight = 8;
   int barX = (SCREEN_WIDTH - barWidth) / 2;
