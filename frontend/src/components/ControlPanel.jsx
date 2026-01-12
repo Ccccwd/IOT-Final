@@ -9,19 +9,81 @@ import {
   Space,
   Badge,
   Statistic,
+  Modal,
+  message,
 } from 'antd';
 import {
   SearchOutlined,
   ReloadOutlined,
   CarOutlined,
   CheckCircleOutlined,
+  LockOutlined,
+  UnlockOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons';
+import { adminAPI } from '../services/api';
 
 const { Option } = Select;
+const { confirm } = Modal;
 
 function ControlPanel({ bikes, loading, onRefresh, onBikeSelect }) {
   const [filter, setFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
+  const [controllingBikes, setControllingBikes] = useState({});
+
+  // 远程开锁
+  const handleRemoteUnlock = (bike) => {
+    confirm({
+      title: '确认远程开锁',
+      icon: <ExclamationCircleOutlined />,
+      content: `确定要远程开锁车辆 ${bike.bike_code} 吗？`,
+      okText: '确定',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          setControllingBikes(prev => ({ ...prev, [bike.id]: true }));
+          await adminAPI.command({
+            bike_id: bike.id,
+            command: 'force_unlock',
+            reason: '管理员远程开锁',
+          });
+          message.success(`车辆 ${bike.bike_code} 远程开锁指令已发送`);
+          setTimeout(() => onRefresh && onRefresh(), 1000);
+        } catch (error) {
+          message.error(`远程开锁失败: ${error.response?.data?.detail || error.message}`);
+        } finally {
+          setControllingBikes(prev => ({ ...prev, [bike.id]: false }));
+        }
+      },
+    });
+  };
+
+  // 远程关锁
+  const handleRemoteLock = (bike) => {
+    confirm({
+      title: '确认远程关锁',
+      icon: <ExclamationCircleOutlined />,
+      content: `确定要远程关锁车辆 ${bike.bike_code} 吗？`,
+      okText: '确定',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          setControllingBikes(prev => ({ ...prev, [bike.id]: true }));
+          await adminAPI.command({
+            bike_id: bike.id,
+            command: 'force_lock',
+            reason: '管理员远程关锁',
+          });
+          message.success(`车辆 ${bike.bike_code} 远程关锁指令已发送`);
+          setTimeout(() => onRefresh && onRefresh(), 1000);
+        } catch (error) {
+          message.error(`远程关锁失败: ${error.response?.data?.detail || error.message}`);
+        } finally {
+          setControllingBikes(prev => ({ ...prev, [bike.id]: false }));
+        }
+      },
+    });
+  };
 
   // 筛选车辆
   const filteredBikes = useMemo(() => {
@@ -104,6 +166,50 @@ function ControlPanel({ bikes, loading, onRefresh, onBikeSelect }) {
             {parseFloat(record.current_lng).toFixed(4)}
           </span>
         );
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_, record) => {
+        const isLoading = controllingBikes[record.id];
+
+        if (record.status === 'idle') {
+          return (
+            <Button
+              type="primary"
+              size="small"
+              icon={<UnlockOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemoteUnlock(record);
+              }}
+              loading={isLoading}
+              disabled={isLoading}
+            >
+              远程开锁
+            </Button>
+          );
+        } else if (record.status === 'riding') {
+          return (
+            <Button
+              type="default"
+              size="small"
+              danger
+              icon={<LockOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemoteLock(record);
+              }}
+              loading={isLoading}
+              disabled={isLoading}
+            >
+              远程关锁
+            </Button>
+          );
+        } else {
+          return <span style={{ color: '#999' }}>-</span>;
+        }
       },
     },
   ];

@@ -160,14 +160,23 @@ class MQTTHandler:
         except Exception as e:
             logger.error(f"发布 MQTT 消息失败: {e}")
 
-    def publish_command(self, bike_id: int, action: str, order_id: int = None):
+    def publish_command(self, bike_id: int, action: str, order_id: int = None, bike_code: str = None):
         """向车辆发送控制指令"""
         message = {
             "action": action,
             "order_id": order_id,
             "timestamp": datetime.now().isoformat()
         }
-        topic = f"server/{bike_id}/command"
+        # 使用 bike_code 构造主题（与硬件端订阅的主题匹配）
+        # 硬件端订阅格式: server/001/command, server/002/command 等
+        if bike_code:
+            topic = f"server/{bike_code}/command"
+        else:
+            # 兼容旧代码，如果没有 bike_code 则使用 bike_id
+            topic = f"server/{bike_id}/command"
+
+        # 强制输出日志
+        logger.info(f"📤 [MQTT] 发送控制指令: topic={topic}, action={action}, bike_code={bike_code}")
         self.publish(topic, message)
 
     def publish_response(self, bike_id: int, success: bool, message: str,

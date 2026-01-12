@@ -429,7 +429,7 @@ async def hardware_unlock(
     db.refresh(order)
 
     # 7. 发送 MQTT 开锁指令
-    mqtt_client.publish_command(bike.id, "unlock", order.id)
+    mqtt_client.publish_command(bike.id, "unlock", order.id, bike.bike_code)
 
     logger.info(
         f"硬件开锁成功: 用户={request.rfid_card}, 车辆={bike.bike_code}, 订单={order.id}"
@@ -491,7 +491,7 @@ async def unlock_bike(unlock: OrderUnlock, db: Session = Depends(get_db)):
     db.refresh(order)
 
     # 发送 MQTT 开锁指令
-    mqtt_client.publish_command(bike.id, "unlock", order.id)
+    mqtt_client.publish_command(bike.id, "unlock", order.id, bike.bike_code)
 
     logger.info(
         f"开锁成功: 用户={unlock.rfid_card}, 车辆={bike.bike_code}, 订单={order.id}"
@@ -502,9 +502,12 @@ async def unlock_bike(unlock: OrderUnlock, db: Session = Depends(get_db)):
 @app.post("/api/orders/lock", response_model=LockResponse, tags=["订单管理"])
 async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
     """还车（结束订单）"""
+    logger.info(f"收到还车请求: order_id={lock.order_id}, rfid_card={lock.rfid_card}, lat={lock.end_lat}, lng={lock.end_lng}")
+
     # 查找订单
     order = db.query(Order).filter(Order.id == lock.order_id).first()
     if not order:
+        logger.error(f"订单不存在: order_id={lock.order_id}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订单不存在")
 
     # 验证用户
@@ -516,6 +519,7 @@ async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
 
     # 检查订单状态
     if order.status != OrderStatus.ACTIVE.value:
+        logger.error(f"订单状态错误: order_id={lock.order_id}, 当前状态={order.status}, 期望状态=active")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"订单状态错误，当前状态: {order.status}",
@@ -526,13 +530,13 @@ async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
     duration_minutes = int((end_time - order.start_time).total_seconds() / 60)
 
     # 计算费用
-    cost = round(duration_minutes * settings.PRICE_PER_MINUTE, 2)
+    cost = Decimal(str(round(duration_minutes * settings.PRICE_PER_MINUTE, 2)))
 
     # 检查余额
     if user.balance < cost:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"余额不足，本次消费 {cost} 元，当前余额 {user.balance} 元",
+            detail=f"余额不足，本次消费 {float(cost)} 元，当前余额 {float(user.balance)} 元",
         )
 
     # 更新订单
@@ -556,7 +560,7 @@ async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
     db.commit()
 
     # 发送 MQTT 关锁指令
-    mqtt_client.publish_command(bike.id, "lock")
+    mqtt_client.publish_command(bike.id, "lock", None, bike.bike_code)
 
     logger.info(
         f"还车成功: 用户={lock.rfid_card}, 车辆={bike.bike_code}, 时长={duration_minutes}分钟, 费用={cost}元"
@@ -565,7 +569,7 @@ async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
     return LockResponse(
         success=True,
         duration_minutes=duration_minutes,
-        cost=cost,
+        cost=float(cost),
         new_balance=float(user.balance),
         message="还车成功",
     )
@@ -724,8 +728,12 @@ async def admin_command(command: AdminCommand, db: Session = Depends(get_db)):
     if not bike:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="车辆不存在")
 
+    # 从 bike_code 中提取数字部分（例如 "BIKE_001" -> "001"）
+    import re
+    bike_code_numeric = re.search(r'\d+', bike.bike_code).group() if re.search(r'\d+', bike.bike_code) else bike.bike_code
+
     # 发送控制指令
-    mqtt_client.publish_command(bike.id, command.command)
+    mqtt_client.publish_command(bike.id, command.command, None, bike_code_numeric)
 
     # 记录日志
     log = SystemLog(

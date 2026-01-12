@@ -34,7 +34,12 @@
       "Bash(mysql:*)",
       "Bash(docker ps:*)",
       "Bash(timeout:*)",
-      "Bash(mosquitto:*)"
+      "Bash(mosquitto:*)",
+      "Bash(ipconfig:*)",
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(powershell:*)",
+      "Bash(wmic:*)"
     ],
     "deny": [],
     "ask": []

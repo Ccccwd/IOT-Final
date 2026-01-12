@@ -62,13 +62,14 @@ const int API_PORT = 8000;                // API 端口
 // ATGM336H GPS模块支持GPS+北斗+GLONASS多星定位
 // 默认波特率：9600
 // 供电：3.3V-5.0V
-// 注意：只连接 GPS TX → ESP RX，不连接 GPS RX（单向接收）
-#define GPS_RX_PIN 16 // D0 - GPIO16 (ESP的RX，连接GPS的TX)
+// 注意：GPS 暂时未使用，使用模拟坐标
+// #define GPS_RX_PIN 16 // D0 - GPIO16 (ESP的RX，连接GPS的TX) - 已移除，D0用于LED
 #define GPS_TX_PIN -1 // 不使用（GPS 不需要接收 ESP 的命令）
 
 // 蜂鸣器/LED引脚
-#define BUZZER_PIN 4 // D2 - GPIO4
-// 注意：GPIO16 用于 GPS，GPIO12 (MISO) 用于 RC522
+#define BUZZER_PIN 4   // D2 - GPIO4
+#define LED_PIN 16     // D0 - GPIO16（骑行状态指示灯）
+// 注意：GPIO12 (MISO) 用于 RC522
 
 // OLED 引脚（软件SPI，与RC522共用硬件SPI引脚）
 #define OLED_CLK 14  // D5 - GPIO14 (SCK，与RC522共用)
@@ -131,7 +132,14 @@ int currentOrderID = 0;          // 当前订单 ID
 // GPS 数据（使用模拟坐标用于测试）
 float currentLat = 30.3078; // 模拟坐标：杭州钱塘区
 float currentLng = 120.4851;
+float startLat = 30.3078;    // 起始位置
+float startLng = 120.4851;
 bool gpsValid = true; // 设为true以便测试后端功能
+
+// 模拟移动参数
+const float MOVE_STEP = 0.0001; // 每次移动的步长（约11米）
+unsigned long lastMoveTime = 0;
+const unsigned long MOVE_INTERVAL = 3000; // 每3秒移动一次
 
 // 计时器
 unsigned long lastHeartbeatTime = 0;
@@ -163,7 +171,9 @@ void mqttCallback(char *topic, byte *payload, unsigned int length);
 void sendHeartbeat();
 void sendGPSReport();
 void sendAuthRequest(String action, String cardUID);
+void sendLockRequest(String cardUID);
 bool processServerResponse(WiFiClient &client);
+bool processLockResponse(WiFiClient &client);
 
 void updateOLEDIdle();
 void updateOLEDRiding();
@@ -189,6 +199,11 @@ void setup()
   // 0. 蜂鸣器引脚 - 最先设置为低电平，防止上电时鸣响
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
+
+  // LED 引脚 - 初始化为熄灭状态
+  // 注意：GPIO16 (D0) 是反相逻辑（LOW=亮, HIGH=灭）
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, HIGH); // HIGH = 熄灭
 
   // 1. OLED CS (GPIO0) - 必须先拉高，否则进入烧录模式
   pinMode(OLED_CS, OUTPUT);
@@ -381,6 +396,21 @@ void loop()
     }
   }
 
+  // GPS 模拟移动（仅在骑行状态下）
+  if (currentState == STATE_RIDING && currentMillis - lastMoveTime >= MOVE_INTERVAL)
+  {
+    // 模拟向东北方向移动
+    currentLat += MOVE_STEP;
+    currentLng += MOVE_STEP;
+
+    Serial.print(F(" [模拟移动] GPS更新: "));
+    Serial.print(currentLat, 6);
+    Serial.print(F(", "));
+    Serial.println(currentLng, 6);
+
+    lastMoveTime = currentMillis;
+  }
+
   // GPS 数据上报
   if (currentMillis - lastGPSReportTime >= GPS_REPORT_INTERVAL)
   {
@@ -489,7 +519,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   }
 
   // 提取指令
-  const char *action = doc["action"]; // unlock, lock, force_lock
+  const char *action = doc["action"]; // unlock, lock, force_unlock, force_lock
 
   if (strcmp(action, "unlock") == 0)
   {
@@ -505,9 +535,10 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     currentOrderID = order_id;
     currentBalance = balance;
     rideStartTime = millis();
+    controlLED(true); // 点亮LED（骑行中）
 
     // 播放提示音
-    playBeep(3, 150);
+    playBeep(3, 200);
 
     // 显示骑行界面
     displayMessage = "骑行中";
@@ -531,7 +562,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     displaySubMessage = buffer;
 
     // 播放提示音
-    playBeep(2, 200);
+    playBeep(2, 300);
 
     delay(3000); // 显示结算信息 3 秒
 
@@ -542,6 +573,51 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     currentOrderID = 0;
     displayMessage = "待机中";
     displaySubMessage = "请刷卡解锁";
+    controlLED(false); // 熄灭LED（空闲）
+  }
+  else if (strcmp(action, "force_unlock") == 0)
+  {
+    // 管理员远程强制开锁
+    Serial.println(F(" 收到管理员远程开锁指令"));
+
+    // 更新状态为骑行中
+    currentState = STATE_RIDING;
+    rideStartTime = millis();
+    controlLED(true); // 点亮LED（骑行中）
+
+    // 播放提示音
+    playBeep(5, 150);
+
+    // 显示信息
+    displayMessage = "远程开锁";
+    displaySubMessage = "管理员操作";
+
+    Serial.println(F(" 远程开锁成功！"));
+  }
+  else if (strcmp(action, "force_lock") == 0)
+  {
+    // 管理员远程强制关锁
+    Serial.println(F(" 收到管理员远程关锁指令"));
+
+    // 播放提示音
+    playBeep(5, 150);
+
+    // 显示信息
+    displayMessage = "远程关锁";
+    displaySubMessage = "管理员操作";
+
+    delay(3000); // 显示3秒
+
+    // 返回待机状态
+    currentState = STATE_IDLE;
+    currentCardUID = "";
+    currentUserID = "";
+    currentOrderID = 0;
+    displayMessage = "待机中";
+    displaySubMessage = "请刷卡解锁";
+    controlLED(false); // 熄灭LED（空闲）
+
+    Serial.println(F(" 远程关锁成功！"));
   }
 }
 
@@ -602,7 +678,7 @@ void loopRFID()
   Serial.println(cardUID);
 
   // 播放提示音
-  playBeep(1, 100);
+  playBeep(1, 150);
 
   // 根据当前状态处理
   if (currentState == STATE_IDLE)
@@ -622,7 +698,7 @@ void loopRFID()
       Serial.println(F("  警告: 卡片不匹配"));
       displayMessage = "卡片不匹配";
       displaySubMessage = "请使用原卡片";
-      playBeep(3, 50); // 错误提示音
+      playBeep(3, 100); // 错误提示音
       delay(2000);
       displayMessage = "骑行中";
       displaySubMessage = "再次刷卡还车";
@@ -668,25 +744,7 @@ void handleLockRequest(String cardUID)
   displaySubMessage = "请稍候";
 
   // 发送还车请求到后端 API
-  // 注意：这里应该调用后端的 /api/orders/lock 接口
-  // 为简化，这里直接通过 MQTT 发送（实际项目中应该通过 HTTP API）
-
-  StaticJsonDocument<256> doc;
-  doc["action"] = "lock";
-  doc["order_id"] = currentOrderID;
-  doc["rfid_card"] = cardUID;
-  doc["end_lat"] = currentLat;
-  doc["end_lng"] = currentLng;
-
-  String message;
-  serializeJson(doc, message);
-
-  // 实际项目中这里应该发送 HTTP POST 请求
-  // mqttClient.publish("bike/001/lock", message.c_str());
-
-  Serial.println(F("  注意: 还车功能需要后端 API 支持"));
-
-  currentState = STATE_IDLE;
+  sendLockRequest(cardUID);
 }
 
 // =========================== HTTP 请求 ===========================
@@ -715,7 +773,8 @@ void sendAuthRequest(String action, String cardUID)
     displayMessage = "连接失败";
     displaySubMessage = "后端未启动";
     currentState = STATE_IDLE;
-    playBeep(3, 50); // 错误提示音
+    controlLED(false); // 熄灭LED（空闲）
+    playBeep(3, 100); // 错误提示音
     delay(3000);     // 显示3秒错误信息
     displayMessage = "待机中";
     displaySubMessage = "请刷卡解锁";
@@ -729,7 +788,7 @@ void sendAuthRequest(String action, String cardUID)
   doc["rfid_card"] = cardUID;
   doc["lat"] = currentLat;
   doc["lng"] = currentLng;
-  doc["bike_code"] = "001"; // 添加车辆编号
+  doc["bike_code"] = "BIKE_001"; // 添加车辆编号
 
   String postData;
   serializeJson(doc, postData);
@@ -755,9 +814,261 @@ void sendAuthRequest(String action, String cardUID)
     playBeep(3, 50);
     delay(2000);
     currentState = STATE_IDLE;
+    controlLED(false); // 熄灭LED（空闲）
     displayMessage = "待机中";
     displaySubMessage = "请刷卡解锁";
   }
+}
+
+/**
+ * 发送还车请求到后端 API
+ */
+void sendLockRequest(String cardUID)
+{
+  // 防止重复还车：检查订单ID是否有效
+  if (currentOrderID == 0)
+  {
+    Serial.println(F(" ⚠️  无有效订单，跳过还车"));
+    displayMessage = "无有效订单";
+    displaySubMessage = "请先开锁";
+    playBeep(1, 150);
+    delay(2000);
+    currentState = STATE_IDLE;
+    controlLED(false); // 熄灭LED（空闲）
+    displayMessage = "待机中";
+    displaySubMessage = "请刷卡解锁";
+    return;
+  }
+
+  Serial.println(F(" 发送还车 HTTP 请求..."));
+  Serial.print(F("   目标服务器: "));
+  Serial.print(API_SERVER);
+  Serial.print(F(":"));
+  Serial.println(API_PORT);
+
+  // 连接后端服务器
+  WiFiClient client;
+  Serial.println(F("   正在连接..."));
+  if (!client.connect(API_SERVER, API_PORT))
+  {
+    Serial.println(F(" ❌ 无法连接到后端服务器"));
+    displayMessage = "连接失败";
+    displaySubMessage = "后端未启动";
+    currentState = STATE_RIDING; // 返回骑行状态
+    controlLED(true); // 点亮LED（骑行中）
+    playBeep(3, 100); // 错误提示音
+    delay(3000);     // 显示3秒错误信息
+    displayMessage = "骑行中";
+    displaySubMessage = "再次刷卡还车";
+    return;
+  }
+
+  Serial.println(F("   ✓ 连接成功！"));
+
+  // 构造 JSON 请求体
+  StaticJsonDocument<256> doc;
+  doc["order_id"] = currentOrderID;
+  doc["rfid_card"] = cardUID;
+  doc["end_lat"] = currentLat;
+  doc["end_lng"] = currentLng;
+
+  String postData;
+  serializeJson(doc, postData);
+
+  // 调试输出：显示发送的数据
+  Serial.print(F("   发送数据: "));
+  Serial.println(postData);
+  Serial.print(F("   当前订单ID: "));
+  Serial.println(currentOrderID);
+
+  // 发送 HTTP POST 请求（使用还车接口）
+  client.print(String("POST /api/orders/lock HTTP/1.1\r\n") +
+               String("Host: ") + API_SERVER + "\r\n" +
+               String("Content-Type: application/json\r\n") +
+               String("Content-Length: ") + postData.length() + "\r\n\r\n" +
+               postData);
+
+  Serial.println(F("  还车请求已发送"));
+
+  // 处理响应
+  bool success = processLockResponse(client);
+  client.stop();
+
+  if (!success)
+  {
+    Serial.println(F(" 还车失败"));
+    displayMessage = "还车失败";
+    displaySubMessage = "请重试";
+    playBeep(3, 50);
+    delay(2000);
+    currentState = STATE_RIDING; // 返回骑行状态
+    controlLED(true); // 点亮LED（骑行中）
+    displayMessage = "骑行中";
+    displaySubMessage = "再次刷卡还车";
+  }
+}
+
+/**
+ * 处理还车服务器响应
+ */
+bool processLockResponse(WiFiClient &client)
+{
+  // 等待响应（超时 5 秒）
+  unsigned long timeout = millis();
+  while (client.available() == 0)
+  {
+    if (millis() - timeout > 5000)
+    {
+      Serial.println(F(" 请求超时"));
+      return false;
+    }
+  }
+
+  // 读取并跳过 HTTP 状态行
+  String statusLine = client.readStringUntil('\n');
+  Serial.print(F(" HTTP 状态: "));
+  Serial.println(statusLine);
+
+  // 检查 HTTP 状态码
+  bool httpOk = false;
+  if (statusLine.indexOf("200") >= 0 || statusLine.indexOf("201") >= 0 || statusLine.indexOf("204") >= 0)
+  {
+    httpOk = true;
+  }
+
+  // 跳过 HTTP 头部，直到遇到空行
+  int headerCount = 0;
+  while (client.available())
+  {
+    String line = client.readStringUntil('\n');
+    line.trim(); // 去除前后空白字符
+    headerCount++;
+
+    if (line.length() == 0)
+    {
+      // 空行表示头部结束
+      break;
+    }
+  }
+
+  // 读取响应体（增加等待时间）
+  String responseBody = "";
+  // 等待更长时间让数据完全到达
+  delay(200);
+
+  // 读取所有可用数据，增加超时保护
+  unsigned long readStart = millis();
+  while (client.available() && (millis() - readStart < 1000))
+  {
+    char c = client.read();
+    responseBody += c;
+    // 如果数据流暂停，再等待一小会儿
+    if (!client.available() && responseBody.length() > 0)
+    {
+      delay(50);
+    }
+  }
+
+  Serial.println(F(" 收到还车响应:"));
+  Serial.println(responseBody);
+  Serial.print(F(" 响应长度: "));
+  Serial.println(responseBody.length());
+
+  // 检查响应体是否为空
+  if (responseBody.length() == 0)
+  {
+    // 如果 HTTP 状态码是 2xx，即使响应体为空也视为成功
+    if (httpOk)
+    {
+      Serial.println(F(" HTTP 状态码为 2xx，响应体为空但视为成功"));
+      // 清除订单信息
+      currentOrderID = 0;
+      currentCardUID = "";
+      currentUserID = "";
+
+      // 显示成功信息
+      displayMessage = "还车成功";
+      displaySubMessage = "感谢使用";
+      playBeep(2, 300);
+
+      delay(3000);
+
+      // 返回待机状态
+      currentState = STATE_IDLE;
+      displayMessage = "待机中";
+      displaySubMessage = "请刷卡解锁";
+      controlLED(false); // 熄灭LED（空闲）
+
+      return true;
+    }
+    else
+    {
+      Serial.println(F(" 错误: 响应体为空且 HTTP 状态码异常"));
+      return false;
+    }
+  }
+
+  // 解析 JSON
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, responseBody);
+
+  if (error)
+  {
+    Serial.print(F(" JSON 解析失败: "));
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  // 检查响应状态
+  bool success = doc["success"];
+  if (!success)
+  {
+    const char *message = doc["message"];
+    Serial.print(F(" 服务器返回错误: "));
+    Serial.println(message);
+    displayMessage = message;
+    return false;
+  }
+
+  // 提取数据
+  float cost = doc["cost"];
+  float newBalance = doc["new_balance"];
+  int duration = doc["duration_minutes"];
+
+  Serial.print(F(" 还车成功！"));
+  Serial.print(F(" 时长: "));
+  Serial.print(duration);
+  Serial.print(F(" 分钟, 费用: "));
+  Serial.print(cost, 2);
+  Serial.print(F(" 元, 新余额: "));
+  Serial.println(newBalance, 2);
+
+  // 显示结算信息
+  char buffer[64];
+  sprintf(buffer, "时长:%d分 费用:%.2f", duration, cost);
+  displayMessage = "还车成功";
+  displaySubMessage = buffer;
+
+  // 立即清除订单信息，防止重复还车
+  currentOrderID = 0;
+  currentCardUID = "";
+  currentUserID = "";
+
+  // 播放提示音
+  playBeep(2, 300);
+
+  delay(3000); // 显示结算信息 3 秒
+
+  // 返回待机状态
+  currentState = STATE_IDLE;
+  currentCardUID = "";
+  currentUserID = "";
+  currentOrderID = 0;
+  displayMessage = "待机中";
+  displaySubMessage = "请刷卡解锁";
+  controlLED(false); // 熄灭LED（空闲）
+
+  return true;
 }
 
 /**
@@ -781,33 +1092,71 @@ bool processServerResponse(WiFiClient &client)
   Serial.print(F(" HTTP 状态: "));
   Serial.println(statusLine);
 
+  // 检查 HTTP 状态码
+  bool httpOk = false;
+  if (statusLine.indexOf("200") >= 0 || statusLine.indexOf("201") >= 0 || statusLine.indexOf("204") >= 0)
+  {
+    httpOk = true;
+  }
+
   // 跳过 HTTP 头部，直到遇到空行
+  int headerCount = 0;
   while (client.available())
   {
     String line = client.readStringUntil('\n');
     line.trim(); // 去除前后空白字符
+    headerCount++;
+
+    // 调试：打印头部信息
+    Serial.print(F(" [头部] "));
+    Serial.println(line);
+
     if (line.length() == 0)
     {
       // 空行表示头部结束
+      Serial.print(F(" 头部结束，共 "));
+      Serial.print(headerCount);
+      Serial.println(F(" 行"));
       break;
     }
   }
 
-  // 读取响应体
+  // 检查是否还有数据可读
+  Serial.print(F(" 剩余可读字节数: "));
+  Serial.println(client.available());
+
+  // 读取响应体（使用更可靠的方法）
   String responseBody = "";
+  // 等待一小段时间让数据完全到达
+  delay(100);
+
+  // 读取所有可用数据
   while (client.available())
   {
-    responseBody += client.readString();
+    char c = client.read();
+    responseBody += c;
   }
 
   Serial.println(F(" 收到响应:"));
   Serial.println(responseBody);
+  Serial.print(F(" 响应长度: "));
+  Serial.println(responseBody.length());
 
   // 检查响应体是否为空
   if (responseBody.length() == 0)
   {
-    Serial.println(F(" 错误: 响应体为空"));
-    return false;
+    // 如果 HTTP 状态码是 2xx，即使响应体为空也视为成功（虽然这种情况不太可能）
+    if (httpOk)
+    {
+      Serial.println(F(" 警告: HTTP 状态码为 2xx，但响应体为空（可能服务器异常）"));
+      // 开锁请求响应体为空，视为失败
+      return false;
+    }
+    else
+    {
+      Serial.println(F(" 错误: 响应体为空且 HTTP 状态码异常"));
+      return false;
+    }
   }
 
   // 解析 JSON
@@ -843,9 +1192,10 @@ bool processServerResponse(WiFiClient &client)
   // 更新状态
   currentState = STATE_RIDING;
   rideStartTime = millis();
+  controlLED(true); // 点亮LED（骑行中）
 
   // 播放成功提示音
-  playBeep(3, 150);
+  playBeep(3, 200);
 
   // 显示骑行界面
   displayMessage = "骑行中";
@@ -889,7 +1239,7 @@ void sendGPSReport()
   StaticJsonDocument<256> doc;
   doc["lat"] = currentLat;
   doc["lng"] = currentLng;
-  doc["mode"] = "real"; // real 或 simulation
+  doc["mode"] = "simulation"; // simulation（模拟）或 real（真实GPS）
   doc["timestamp"] = millis();
 
   String message;
@@ -897,7 +1247,7 @@ void sendGPSReport()
 
   if (mqttClient.publish(TOPIC_GPS, message.c_str()))
   {
-    Serial.print(F(" GPS 已上报: "));
+    Serial.print(F(" GPS 已上报 (模拟): "));
     Serial.print(currentLat, 6);
     Serial.print(F(", "));
     Serial.println(currentLng, 6);
@@ -951,54 +1301,48 @@ void updateOLEDIdle()
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // 标题 - 行 0
-  display.setCursor(0, 0);
-  display.setTextSize(1);
-  display.println("=== Smart Bike ===");
+  // 标题 - 居中显示
+  display.setTextSize(2);
+  display.setCursor(10, 0);
+  display.println("SmartBike");
 
   // 分隔线
-  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+  display.drawLine(0, 18, 127, 18, SSD1306_WHITE);
 
-  // WiFi 状态 - 行 13
-  display.setCursor(0, 13);
+  // WiFi 和 GPS 状态 - 行 22
   display.setTextSize(1);
-  display.print("WiFi: ");
+  display.setCursor(0, 22);
+  display.print("WiFi:");
   if (WiFi.status() == WL_CONNECTED)
   {
     display.println("OK");
   }
   else
   {
-    display.println("X");
+    display.println("--");
   }
 
-  // GPS 状态 - 行 23
-  display.setCursor(0, 23);
-  display.print("GPS: ");
+  // GPS 状态 - 行 22 (同一行右侧)
+  display.setCursor(70, 22);
+  display.print("GPS:");
   if (gpsValid)
   {
-    display.println("OK(Sim)");
+    display.println("OK");
   }
   else
   {
-    display.println("X");
+    display.println("--");
   }
 
-  // 坐标信息 - 行 30-40
-  display.setCursor(0, 30);
+  // 坐标信息 - 行 32
+  display.setCursor(0, 32);
   display.print("Lat:");
-  display.print(currentLat, 4);
-  display.setCursor(0, 40);
+  display.println(currentLat, 4);
+
+  // 坐标信息 - 行 42
+  display.setCursor(0, 42);
   display.print("Lng:");
-  display.print(currentLng, 4);
-
-  // 分隔线
-  display.drawLine(0, 50, 127, 50, SSD1306_WHITE);
-
-  // 提示信息 - 行 54 (距离底部10像素，安全范围)
-  display.setCursor(0, 54);
-  display.setTextSize(1);
-  display.print(displayMessage.c_str());
+  display.println(currentLng, 4);
 }
 
 /**
@@ -1012,42 +1356,43 @@ void updateOLEDRiding()
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // 标题 - 行 0
-  display.setCursor(0, 0);
+  // 标题 - 大号显示
   display.setTextSize(2);
-  display.println(" RIDING");
+  display.setCursor(20, 0);
+  display.println("RIDING");
 
   // 分隔线
   display.drawLine(0, 18, 127, 18, SSD1306_WHITE);
 
-  // 骑行时长 - 行 22
+  // 骑行时长 - 行 23
   unsigned long rideDuration = (millis() - rideStartTime) / 1000 / 60; // 分钟
-  display.setCursor(0, 22);
+  unsigned long rideSeconds = (millis() - rideStartTime) / 1000 % 60; // 秒
   display.setTextSize(1);
+  display.setCursor(0, 23);
   display.print("Time: ");
   display.print(rideDuration);
-  display.println(" min");
+  display.print("m ");
+  display.print(rideSeconds);
+  display.println("s");
 
-  // 预计费用 - 行 32
+  // 预计费用 - 行 34
   float cost = rideDuration * PRICE_PER_MINUTE;
-  display.setCursor(0, 32);
+  display.setCursor(0, 34);
   display.print("Cost: ");
   display.print(cost, 2);
   display.println(" RMB");
 
-  // 余额 - 行 40
-  display.setCursor(0, 40);
-  display.print("Balance: ");
-  display.print(currentBalance, 2);
-  display.print(" RMB");
+  // 速度（模拟）- 行 45
+  display.setCursor(0, 45);
+  display.print("Speed: ");
+  display.print(12 + (rideDuration % 8)); // 模拟速度 12-20 km/h
+  display.println(" km/h");
 
-  // 分隔线
-  display.drawLine(0, 50, 127, 50, SSD1306_WHITE);
-
-  // 提示信息 - 行 54 (距离底部10像素，安全范围)
-  display.setCursor(0, 54);
-  display.setTextSize(1);
-  display.print(displaySubMessage.c_str());
+  // 坐标信息 - 行 56
+  display.setCursor(0, 56);
+  display.print(currentLat, 4);
+  display.print(",");
+  display.println(currentLng, 4);
 }
 
 /**
@@ -1061,18 +1406,18 @@ void updateOLEDProcessing()
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // 主消息 - 行 10 (居中，大字体)
+  // 主消息 - 行 8 (居中，大字体)
   display.setTextSize(2);
   int16_t x, y1;
   uint16_t w, h;
   display.getTextBounds((char *)displayMessage.c_str(), 0, 0, &x, &y1, &w, &h);
-  display.setCursor((SCREEN_WIDTH - w) / 2, 10);
+  display.setCursor((SCREEN_WIDTH - w) / 2, 8);
   display.println(displayMessage.c_str());
 
-  // 副消息 - 行 30 (居中，小字体)
+  // 副消息 - 行 28 (居中，小字体)
   display.setTextSize(1);
   display.getTextBounds((char *)displaySubMessage.c_str(), 0, 0, &x, &y1, &w, &h);
-  display.setCursor((SCREEN_WIDTH - w) / 2, 30);
+  display.setCursor((SCREEN_WIDTH - w) / 2, 28);
   display.println(displaySubMessage.c_str());
 
   // 加载动画进度条 - 行 45
@@ -1080,7 +1425,7 @@ void updateOLEDProcessing()
   progress = (progress + 10) % 100;
 
   int barWidth = 100;
-  int barHeight = 8;
+  int barHeight = 10;
   int barX = (SCREEN_WIDTH - barWidth) / 2;
   int barY = 45;
 
@@ -1163,6 +1508,16 @@ void playBeep(int times, int duration)
 void controlBuzzer(bool state)
 {
   digitalWrite(BUZZER_PIN, state ? HIGH : LOW);
+}
+
+/**
+ * 控制LED开关（骑行指示灯）
+ * @param state true=亮（骑行中）, false=灭（空闲）
+ * 注意：GPIO16 (D0) 是反相逻辑（LOW=亮, HIGH=灭）
+ */
+void controlLED(bool state)
+{
+  digitalWrite(LED_PIN, state ? LOW : HIGH); // 反相逻辑
 }
 
 // =========================== 辅助函数 ===========================
