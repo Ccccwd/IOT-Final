@@ -58,13 +58,13 @@ const int API_PORT = 8000;                // API 端口
 // MOSI = GPIO13 (D7)
 // MISO = GPIO12 (D6) - 被蜂鸣器占用，RC522只能读UID
 
-// GPS 引脚配置（使用硬件串口）
+// GPS 引脚（软件串口 - 单向接收模式）
 // ATGM336H GPS模块支持GPS+北斗+GLONASS多星定位
 // 默认波特率：9600
 // 供电：3.3V-5.0V
-// 接线方式：GPS TX → NodeMCU RX (GPIO3)
-// ⚠️ 上传程序时必须断开 GPS TX，上传后再连接！
-#define GPS_BAUD 9600 // GPS 波特率
+// 注意：GPS 暂时未使用，使用模拟坐标
+// #define GPS_RX_PIN 16 // D0 - GPIO16 (ESP的RX，连接GPS的TX) - 已移除，D0用于LED
+#define GPS_TX_PIN -1 // 不使用（GPS 不需要接收 ESP 的命令）
 
 // 蜂鸣器/LED引脚
 #define BUZZER_PIN 4   // D2 - GPIO4
@@ -105,7 +105,8 @@ WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
 // GPS 和 RFID
-TinyGPSPlus gps; // GPS 对象（使用硬件串口）
+// TinyGPSPlus gps;  // 暂时注释，使用模拟坐标
+// SoftwareSerial GPSSerial(GPS_RX_PIN, GPS_TX_PIN); // 暂时注释
 MFRC522 rfid(RFID_SDA_PIN, RFID_RST_PIN);
 
 // OLED 显示器（软件SPI接口，与RC522共用硬件SPI引脚）
@@ -128,24 +129,17 @@ float currentBalance = 0.0;      // 当前余额
 unsigned long rideStartTime = 0; // 骑行开始时间
 int currentOrderID = 0;          // 当前订单 ID
 
-// GPS 数据（混合模式：真实起始坐标 + 模拟移动）
-float currentLat = 0.0;  // 当前纬度
-float currentLng = 0.0;  // 当前经度
-float startLat = 0.0;    // 起始位置纬度（从 GPS 读取）
-float startLng = 0.0;    // 起始位置经度（从 GPS 读取）
-bool gpsValid = false;   // GPS 定位是否有效
+// GPS 数据（使用模拟坐标用于测试）
+float currentLat = 30.3078; // 模拟坐标：杭州钱塘区
+float currentLng = 120.4851;
+float startLat = 30.3078;    // 起始位置
+float startLng = 120.4851;
+bool gpsValid = true; // 设为true以便测试后端功能
 
-// GPS 统计数据
-unsigned long gpsCharsProcessed = 0;  // 已处理的 GPS 字符数
-int gpsSatellites = 0;               // GPS 卫星数量
-double gpsAltitude = 0.0;            // 海拔高度（米）
-double gpsSpeed = 0.0;               // 速度（km/h）
-
-// 模拟移动参数（骑行时使用）
-const float MOVE_STEP = 0.0001;       // 每次移动的步长（约11米）
+// 模拟移动参数
+const float MOVE_STEP = 0.0001; // 每次移动的步长（约11米）
 unsigned long lastMoveTime = 0;
 const unsigned long MOVE_INTERVAL = 3000; // 每3秒移动一次
-bool useSimulation = false;          // 是否启用模拟移动模式
 
 // 计时器
 unsigned long lastHeartbeatTime = 0;
@@ -226,20 +220,27 @@ void setup()
   // 4. GPIO12 (MISO) - 配置为输入
   pinMode(12, INPUT);
 
-  // 初始化串口（用于 GPS，9600 波特率）
-  Serial.begin(GPS_BAUD);
+  // 初始化串口
+  Serial.begin(9600);
+  Serial.println();
+  Serial.println(F("================================="));
+  Serial.println(F("智能共享单车系统"));
+  Serial.println(F("版本: v1.1 - SPI冲突修复版"));
+  Serial.println(F("日期: 2025-01-12"));
+  Serial.println(F("================================="));
 
   // 初始化各模块（顺序重要）
   setupBuzzer(); // 蜂鸣器初始化
   setupOLED();   // OLED显示屏
   setupRFID();   // RC522读卡器
-  setupGPS();    // GPS模块
+  // setupGPS();  // 暂时跳过GPS初始化
   setupWiFi();
   setupMQTT();
   displayMessage = "系统启动中...";
   displaySubMessage = "请稍候";
 
   delay(2000);
+  Serial.println(F(" 系统初始化完成"));
   displayMessage = "待机中";
   displaySubMessage = "请刷卡解锁";
 }
@@ -249,6 +250,8 @@ void setup()
  */
 void setupWiFi()
 {
+  Serial.println(F("📡 连接 WiFi..."));
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -257,7 +260,20 @@ void setupWiFi()
   while (WiFi.status() != WL_CONNECTED && attempts < 30)
   {
     delay(1000);
+    Serial.print(F("."));
     attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    Serial.println();
+    Serial.print(F(" WiFi 已连接: "));
+    Serial.println(WiFi.localIP());
+  }
+  else
+  {
+    Serial.println();
+    Serial.println(F(" WiFi 连接失败，将尝试重连"));
   }
 }
 
@@ -268,6 +284,7 @@ void setupMQTT()
 {
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
+  Serial.println(F("📡 MQTT 已配置"));
 }
 
 /**
@@ -288,15 +305,24 @@ void setupRFID()
 
   // 读取版本号验证通信
   byte version = rfid.PCD_ReadRegister(rfid.VersionReg);
+  Serial.print(F("✓ RFID 读卡器已初始化 (版本: 0x"));
+  Serial.print(version, HEX);
+  Serial.println(F(")"));
+  Serial.println(F("  支持读取卡片 UID"));
 }
 
 /**
- * GPS 模块初始化（使用硬件串口）
+ * GPS 模块初始化（暂时跳过）
  */
 void setupGPS()
 {
-  // 硬件串口已在 setup() 中初始化为 GPS_BAUD (9600)
-  delay(1000);
+  // 暂时跳过GPS初始化，使用模拟坐标
+  Serial.println(F("⚡ GPS 模块跳过 - 使用模拟坐标"));
+  Serial.println(F("   模拟位置: 杭州钱塘区"));
+  Serial.print(F("   Lat: "));
+  Serial.println(currentLat, 6);
+  Serial.print(F("   Lng: "));
+  Serial.println(currentLng, 6);
 }
 
 /**
@@ -310,8 +336,10 @@ void setupOLED()
   // 初始化OLED，使用软件SPI接口（通过&SPI参数使用硬件SPI引脚）
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
   {
+    Serial.println(F("  OLED 初始化失败！"));
     return;
   }
+  Serial.println(F("✓ OLED 显示屏已就绪"));
 
   // 显示启动画面
   display.clearDisplay();
@@ -330,6 +358,7 @@ void setupOLED()
 void setupBuzzer()
 {
   // 蜂鸣器已在setup()开始时初始化为低电平
+  Serial.println(F("✓ 蜂鸣器已就绪"));
 }
 
 // =========================== 主循环函数 ===========================
@@ -346,7 +375,7 @@ void loop()
   loopMQTT();
 
   // 处理 GPS 数据
-  loopGPS(); // 启用真实 GPS 读取
+  // loopGPS();  // 暂时跳过GPS处理，使用模拟坐标
 
   // 处理 RFID 读卡
   loopRFID();
@@ -368,11 +397,16 @@ void loop()
   }
 
   // GPS 模拟移动（仅在骑行状态下）
-  if (currentState == STATE_RIDING && useSimulation && currentMillis - lastMoveTime >= MOVE_INTERVAL)
+  if (currentState == STATE_RIDING && currentMillis - lastMoveTime >= MOVE_INTERVAL)
   {
     // 模拟向东北方向移动
     currentLat += MOVE_STEP;
     currentLng += MOVE_STEP;
+
+    Serial.print(F(" [模拟移动] GPS更新: "));
+    Serial.print(currentLat, 6);
+    Serial.print(F(", "));
+    Serial.println(currentLng, 6);
 
     lastMoveTime = currentMillis;
   }
@@ -405,6 +439,7 @@ void loopWiFi()
     // 定时尝试重连
     if (currentMillis - lastWifiRetryTime >= WIFI_RETRY_INTERVAL)
     {
+      Serial.println(F(" 尝试重新连接 WiFi..."));
       WiFi.disconnect();
       WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
       lastWifiRetryTime = currentMillis;
@@ -426,14 +461,25 @@ void loopMQTT()
 
     if (currentMillis - lastMqttRetryTime >= MQTT_RETRY_INTERVAL)
     {
+      Serial.println(F(" 尝试连接 MQTT Broker..."));
+
       // 生成随机 Client ID
       String clientId = "bike_001_";
       clientId += String(random(0xffff), HEX);
 
       if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD))
       {
+        Serial.println(F(" MQTT 已连接"));
+
         // 订阅指令主题
         mqttClient.subscribe(TOPIC_COMMAND);
+        Serial.print(F(" 已订阅主题: "));
+        Serial.println(TOPIC_COMMAND);
+      }
+      else
+      {
+        Serial.print(F(" MQTT 连接失败, rc="));
+        Serial.println(mqttClient.state());
       }
 
       lastMqttRetryTime = currentMillis;
@@ -451,10 +497,15 @@ void loopMQTT()
  */
 void mqttCallback(char *topic, byte *payload, unsigned int length)
 {
+  Serial.print(F(" 收到 MQTT 消息 ["));
+  Serial.print(topic);
+  Serial.print(F("]: "));
+
   // 将 payload 转换为字符串
   char message[length + 1];
   memcpy(message, payload, length);
   message[length] = '\0';
+  Serial.println(message);
 
   // 解析 JSON
   StaticJsonDocument<256> doc;
@@ -462,6 +513,8 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
 
   if (error)
   {
+    Serial.print(F(" JSON 解析失败: "));
+    Serial.println(error.c_str());
     return;
   }
 
@@ -474,15 +527,15 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     int order_id = doc["order_id"];
     float balance = doc["balance"];
 
+    Serial.print(F(" 收到开锁指令，订单 ID: "));
+    Serial.println(order_id);
+
     // 更新状态
     currentState = STATE_RIDING;
     currentOrderID = order_id;
     currentBalance = balance;
     rideStartTime = millis();
     controlLED(true); // 点亮LED（骑行中）
-
-    // 启用模拟移动模式（从当前 GPS 位置开始模拟）
-    useSimulation = true;
 
     // 播放提示音
     playBeep(3, 200);
@@ -497,6 +550,10 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     float cost = doc["cost"];
     float new_balance = doc["new_balance"];
     int duration = doc["duration_minutes"];
+
+    Serial.print(F(" 收到关锁指令，费用: "));
+    Serial.print(cost);
+    Serial.println(F(" 元"));
 
     // 显示结算信息
     char buffer[64];
@@ -514,7 +571,6 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     currentCardUID = "";
     currentUserID = "";
     currentOrderID = 0;
-    useSimulation = false; // 关闭模拟模式，恢复 GPS 读取
     displayMessage = "待机中";
     displaySubMessage = "请刷卡解锁";
     controlLED(false); // 熄灭LED（空闲）
@@ -522,13 +578,12 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   else if (strcmp(action, "force_unlock") == 0)
   {
     // 管理员远程强制开锁
+    Serial.println(F(" 收到管理员远程开锁指令"));
+
     // 更新状态为骑行中
     currentState = STATE_RIDING;
     rideStartTime = millis();
     controlLED(true); // 点亮LED（骑行中）
-
-    // 启用模拟移动模式（从当前 GPS 位置开始模拟）
-    useSimulation = true;
 
     // 播放提示音
     playBeep(5, 150);
@@ -536,10 +591,14 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     // 显示信息
     displayMessage = "远程开锁";
     displaySubMessage = "管理员操作";
+
+    Serial.println(F(" 远程开锁成功！"));
   }
   else if (strcmp(action, "force_lock") == 0)
   {
     // 管理员远程强制关锁
+    Serial.println(F(" 收到管理员远程关锁指令"));
+
     // 播放提示音
     playBeep(5, 150);
 
@@ -554,62 +613,26 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     currentCardUID = "";
     currentUserID = "";
     currentOrderID = 0;
-    useSimulation = false; // 关闭模拟模式，恢复 GPS 读取
     displayMessage = "待机中";
     displaySubMessage = "请刷卡解锁";
     controlLED(false); // 熄灭LED（空闲）
+
+    Serial.println(F(" 远程关锁成功！"));
   }
 }
 
 // =========================== GPS 处理 ===========================
 
 /**
- * GPS 循环处理（读取并解析 GPS 数据）
- * 混合模式：首次读取真实 GPS 作为起始坐标，骑行时使用模拟移动
+ * GPS 循环处理（暂时跳过，使用模拟坐标）
  */
 void loopGPS()
 {
-  // 从硬件串口读取 GPS 数据
-  while (Serial.available() > 0)
-  {
-    char c = Serial.read();
-    gps.encode(c);
-    gpsCharsProcessed++;
-  }
-
-  // 仅在待机状态或首次启动时更新 GPS 数据（获取真实起始坐标）
-  if (!useSimulation && gps.location.isUpdated())
-  {
-    currentLat = gps.location.lat();
-    currentLng = gps.location.lng();
-
-    // 首次获取有效位置时，记录为起始位置
-    if (startLat == 0.0 && startLng == 0.0)
-    {
-      startLat = currentLat;
-      startLng = currentLng;
-    }
-
-    gpsValid = true;
-  }
-
-  // 更新卫星数量
-  if (gps.satellites.isUpdated())
-  {
-    gpsSatellites = gps.satellites.value();
-  }
-
-  // 更新海拔
-  if (gps.altitude.isUpdated())
-  {
-    gpsAltitude = gps.altitude.meters();
-  }
-
-  // 更新速度
-  if (gps.speed.isUpdated())
-  {
-    gpsSpeed = gps.speed.kmph();
-  }
+  // 暂时注释GPS处理，使用模拟坐标测试其他功能
+  // while (GPSSerial.available() > 0) {
+  //   gps.encode(GPSSerial.read());
+  // }
+  // GPS数据已设为模拟值：北京天安门 (39.9042, 116.4074)
 }
 
 // =========================== RFID 处理 ===========================
@@ -651,6 +674,8 @@ void loopRFID()
 
   // 获取卡片 UID
   String cardUID = getRFIDUID();
+  Serial.print(F(" 检测到卡片: "));
+  Serial.println(cardUID);
 
   // 播放提示音
   playBeep(1, 150);
@@ -670,6 +695,7 @@ void loopRFID()
     }
     else
     {
+      Serial.println(F("  警告: 卡片不匹配"));
       displayMessage = "卡片不匹配";
       displaySubMessage = "请使用原卡片";
       playBeep(3, 100); // 错误提示音
@@ -689,6 +715,7 @@ void loopRFID()
  */
 void handleUnlockRequest(String cardUID)
 {
+  Serial.println(F(" 处理开锁请求..."));
 
   // 更新状态
   currentState = STATE_PROCESSING;
@@ -707,6 +734,7 @@ void handleUnlockRequest(String cardUID)
  */
 void handleLockRequest(String cardUID)
 {
+  Serial.println(F(" 处理还车请求..."));
 
   // 更新状态
   currentState = STATE_PROCESSING;
@@ -726,11 +754,22 @@ void handleLockRequest(String cardUID)
  */
 void sendAuthRequest(String action, String cardUID)
 {
+  Serial.println(F(" 发送 HTTP 请求..."));
+  Serial.print(F("   目标服务器: "));
+  Serial.print(API_SERVER);
+  Serial.print(F(":"));
+  Serial.println(API_PORT);
 
   // 连接后端服务器
   WiFiClient client;
+  Serial.println(F("   正在连接..."));
   if (!client.connect(API_SERVER, API_PORT))
   {
+    Serial.println(F(" ❌ 无法连接到后端服务器"));
+    Serial.println(F("   可能原因:"));
+    Serial.println(F("   1. 后端服务器未启动"));
+    Serial.println(F("   2. IP地址不正确"));
+    Serial.println(F("   3. 防火墙阻止连接"));
     displayMessage = "连接失败";
     displaySubMessage = "后端未启动";
     currentState = STATE_IDLE;
@@ -742,6 +781,7 @@ void sendAuthRequest(String action, String cardUID)
     return;
   }
 
+  Serial.println(F("   ✓ 连接成功！"));
 
   // 构造 JSON 请求体
   StaticJsonDocument<256> doc;
@@ -760,6 +800,7 @@ void sendAuthRequest(String action, String cardUID)
                String("Content-Length: ") + postData.length() + "\r\n\r\n" +
                postData);
 
+  Serial.println(F(" 请求已发送"));
 
   // 处理响应
   bool success = processServerResponse(client);
@@ -767,6 +808,7 @@ void sendAuthRequest(String action, String cardUID)
 
   if (!success)
   {
+    Serial.println(F(" 认证失败"));
     displayMessage = "认证失败";
     displaySubMessage = "请重试";
     playBeep(3, 50);
@@ -786,6 +828,7 @@ void sendLockRequest(String cardUID)
   // 防止重复还车：检查订单ID是否有效
   if (currentOrderID == 0)
   {
+    Serial.println(F(" ⚠️  无有效订单，跳过还车"));
     displayMessage = "无有效订单";
     displaySubMessage = "请先开锁";
     playBeep(1, 150);
@@ -797,11 +840,18 @@ void sendLockRequest(String cardUID)
     return;
   }
 
+  Serial.println(F(" 发送还车 HTTP 请求..."));
+  Serial.print(F("   目标服务器: "));
+  Serial.print(API_SERVER);
+  Serial.print(F(":"));
+  Serial.println(API_PORT);
 
   // 连接后端服务器
   WiFiClient client;
+  Serial.println(F("   正在连接..."));
   if (!client.connect(API_SERVER, API_PORT))
   {
+    Serial.println(F(" ❌ 无法连接到后端服务器"));
     displayMessage = "连接失败";
     displaySubMessage = "后端未启动";
     currentState = STATE_RIDING; // 返回骑行状态
@@ -813,6 +863,7 @@ void sendLockRequest(String cardUID)
     return;
   }
 
+  Serial.println(F("   ✓ 连接成功！"));
 
   // 构造 JSON 请求体
   StaticJsonDocument<256> doc;
@@ -825,6 +876,10 @@ void sendLockRequest(String cardUID)
   serializeJson(doc, postData);
 
   // 调试输出：显示发送的数据
+  Serial.print(F("   发送数据: "));
+  Serial.println(postData);
+  Serial.print(F("   当前订单ID: "));
+  Serial.println(currentOrderID);
 
   // 发送 HTTP POST 请求（使用还车接口）
   client.print(String("POST /api/orders/lock HTTP/1.1\r\n") +
@@ -833,6 +888,7 @@ void sendLockRequest(String cardUID)
                String("Content-Length: ") + postData.length() + "\r\n\r\n" +
                postData);
 
+  Serial.println(F("  还车请求已发送"));
 
   // 处理响应
   bool success = processLockResponse(client);
@@ -840,6 +896,7 @@ void sendLockRequest(String cardUID)
 
   if (!success)
   {
+    Serial.println(F(" 还车失败"));
     displayMessage = "还车失败";
     displaySubMessage = "请重试";
     playBeep(3, 50);
@@ -862,12 +919,15 @@ bool processLockResponse(WiFiClient &client)
   {
     if (millis() - timeout > 5000)
     {
+      Serial.println(F(" 请求超时"));
       return false;
     }
   }
 
   // 读取并跳过 HTTP 状态行
   String statusLine = client.readStringUntil('\n');
+  Serial.print(F(" HTTP 状态: "));
+  Serial.println(statusLine);
 
   // 检查 HTTP 状态码
   bool httpOk = false;
@@ -909,6 +969,10 @@ bool processLockResponse(WiFiClient &client)
     }
   }
 
+  Serial.println(F(" 收到还车响应:"));
+  Serial.println(responseBody);
+  Serial.print(F(" 响应长度: "));
+  Serial.println(responseBody.length());
 
   // 检查响应体是否为空
   if (responseBody.length() == 0)
@@ -916,11 +980,11 @@ bool processLockResponse(WiFiClient &client)
     // 如果 HTTP 状态码是 2xx，即使响应体为空也视为成功
     if (httpOk)
     {
+      Serial.println(F(" HTTP 状态码为 2xx，响应体为空但视为成功"));
       // 清除订单信息
       currentOrderID = 0;
       currentCardUID = "";
       currentUserID = "";
-      useSimulation = false; // 关闭模拟模式，恢复 GPS 读取
 
       // 显示成功信息
       displayMessage = "还车成功";
@@ -939,6 +1003,7 @@ bool processLockResponse(WiFiClient &client)
     }
     else
     {
+      Serial.println(F(" 错误: 响应体为空且 HTTP 状态码异常"));
       return false;
     }
   }
@@ -949,6 +1014,8 @@ bool processLockResponse(WiFiClient &client)
 
   if (error)
   {
+    Serial.print(F(" JSON 解析失败: "));
+    Serial.println(error.c_str());
     return false;
   }
 
@@ -957,6 +1024,8 @@ bool processLockResponse(WiFiClient &client)
   if (!success)
   {
     const char *message = doc["message"];
+    Serial.print(F(" 服务器返回错误: "));
+    Serial.println(message);
     displayMessage = message;
     return false;
   }
@@ -966,6 +1035,13 @@ bool processLockResponse(WiFiClient &client)
   float newBalance = doc["new_balance"];
   int duration = doc["duration_minutes"];
 
+  Serial.print(F(" 还车成功！"));
+  Serial.print(F(" 时长: "));
+  Serial.print(duration);
+  Serial.print(F(" 分钟, 费用: "));
+  Serial.print(cost, 2);
+  Serial.print(F(" 元, 新余额: "));
+  Serial.println(newBalance, 2);
 
   // 显示结算信息
   char buffer[64];
@@ -977,7 +1053,6 @@ bool processLockResponse(WiFiClient &client)
   currentOrderID = 0;
   currentCardUID = "";
   currentUserID = "";
-  useSimulation = false; // 关闭模拟模式，恢复 GPS 读取
 
   // 播放提示音
   playBeep(2, 300);
@@ -1007,12 +1082,15 @@ bool processServerResponse(WiFiClient &client)
   {
     if (millis() - timeout > 5000)
     {
+      Serial.println(F(" 请求超时"));
       return false;
     }
   }
 
   // 读取并跳过 HTTP 状态行
   String statusLine = client.readStringUntil('\n');
+  Serial.print(F(" HTTP 状态: "));
+  Serial.println(statusLine);
 
   // 检查 HTTP 状态码
   bool httpOk = false;
@@ -1030,15 +1108,22 @@ bool processServerResponse(WiFiClient &client)
     headerCount++;
 
     // 调试：打印头部信息
+    Serial.print(F(" [头部] "));
+    Serial.println(line);
 
     if (line.length() == 0)
     {
       // 空行表示头部结束
+      Serial.print(F(" 头部结束，共 "));
+      Serial.print(headerCount);
+      Serial.println(F(" 行"));
       break;
     }
   }
 
   // 检查是否还有数据可读
+  Serial.print(F(" 剩余可读字节数: "));
+  Serial.println(client.available());
 
   // 读取响应体（使用更可靠的方法）
   String responseBody = "";
@@ -1052,6 +1137,10 @@ bool processServerResponse(WiFiClient &client)
     responseBody += c;
   }
 
+  Serial.println(F(" 收到响应:"));
+  Serial.println(responseBody);
+  Serial.print(F(" 响应长度: "));
+  Serial.println(responseBody.length());
 
   // 检查响应体是否为空
   if (responseBody.length() == 0)
@@ -1059,11 +1148,13 @@ bool processServerResponse(WiFiClient &client)
     // 如果 HTTP 状态码是 2xx，即使响应体为空也视为成功（虽然这种情况不太可能）
     if (httpOk)
     {
+      Serial.println(F(" 警告: HTTP 状态码为 2xx，但响应体为空（可能服务器异常）"));
       // 开锁请求响应体为空，视为失败
       return false;
     }
     else
     {
+      Serial.println(F(" 错误: 响应体为空且 HTTP 状态码异常"));
       return false;
     }
   }
@@ -1074,6 +1165,8 @@ bool processServerResponse(WiFiClient &client)
 
   if (error)
   {
+    Serial.print(F(" JSON 解析失败: "));
+    Serial.println(error.c_str());
     return false;
   }
 
@@ -1082,6 +1175,8 @@ bool processServerResponse(WiFiClient &client)
   if (!success)
   {
     const char *message = doc["message"];
+    Serial.print(F(" 服务器返回错误: "));
+    Serial.println(message);
     displayMessage = message;
     return false;
   }
@@ -1091,14 +1186,13 @@ bool processServerResponse(WiFiClient &client)
   currentBalance = doc["balance"];
   currentOrderID = doc["order_id"];
 
+  Serial.print(F(" 认证成功，订单 ID: "));
+  Serial.println(currentOrderID);
 
   // 更新状态
   currentState = STATE_RIDING;
   rideStartTime = millis();
   controlLED(true); // 点亮LED（骑行中）
-
-  // 启用模拟移动模式（从当前 GPS 位置开始模拟）
-  useSimulation = true;
 
   // 播放成功提示音
   playBeep(3, 200);
@@ -1129,9 +1223,11 @@ void sendHeartbeat()
 
   if (mqttClient.publish(TOPIC_HEARTBEAT, message.c_str()))
   {
+    Serial.println(F(" 心跳包已发送"));
   }
   else
   {
+    Serial.println(F(" 心跳包发送失败"));
   }
 }
 
@@ -1143,7 +1239,7 @@ void sendGPSReport()
   StaticJsonDocument<256> doc;
   doc["lat"] = currentLat;
   doc["lng"] = currentLng;
-  doc["mode"] = useSimulation ? "hybrid" : "real"; // hybrid=真实起始+模拟移动, real=完全真实
+  doc["mode"] = "simulation"; // simulation（模拟）或 real（真实GPS）
   doc["timestamp"] = millis();
 
   String message;
@@ -1151,9 +1247,14 @@ void sendGPSReport()
 
   if (mqttClient.publish(TOPIC_GPS, message.c_str()))
   {
+    Serial.print(F(" GPS 已上报 (模拟): "));
+    Serial.print(currentLat, 6);
+    Serial.print(F(", "));
+    Serial.println(currentLng, 6);
   }
   else
   {
+    Serial.println(F(" GPS 上报失败"));
   }
 }
 
