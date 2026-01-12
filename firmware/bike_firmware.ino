@@ -22,37 +22,37 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <TinyGPS++.h>
-#include <SoftwareSerial.h>  // GPS 使用软件串口
+#include <SoftwareSerial.h> // GPS 使用软件串口
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
 // =========================== 配置参数 ===========================
 
 // WiFi 配置
-const char* WIFI_SSID = "P60";        // 请修改为你的 WiFi SSID
-const char* WIFI_PASSWORD = "66668888"; // 请修改为你的 WiFi 密码
+const char *WIFI_SSID = "P60";          // 请修改为你的 WiFi SSID
+const char *WIFI_PASSWORD = "66668888"; // 请修改为你的 WiFi 密码
 
 // MQTT 配置
-const char* MQTT_BROKER = "broker.emqx.io";      // MQTT Broker 地址
-const int MQTT_PORT = 1883;                      // MQTT 端口
-const char* MQTT_CLIENT_ID = "bike_001";         // 客户端 ID（对应车辆编号）
-const char* MQTT_USERNAME = "";                  // MQTT 用户名（公共 broker 留空）
-const char* MQTT_PASSWORD = "";                  // MQTT 密码（公共 broker 留空）
+const char *MQTT_BROKER = "broker.emqx.io"; // MQTT Broker 地址
+const int MQTT_PORT = 1883;                 // MQTT 端口
+const char *MQTT_CLIENT_ID = "bike_001";    // 客户端 ID（对应车辆编号）
+const char *MQTT_USERNAME = "";             // MQTT 用户名（公共 broker 留空）
+const char *MQTT_PASSWORD = "";             // MQTT 密码（公共 broker 留空）
 
 // 主题配置
-const char* TOPIC_HEARTBEAT = "bike/001/heartbeat";     // 心跳包
-const char* TOPIC_AUTH = "bike/001/auth";               // 认证请求
-const char* TOPIC_GPS = "bike/001/gps";                 // GPS 上报
-const char* TOPIC_COMMAND = "server/001/command";       // 服务器指令
+const char *TOPIC_HEARTBEAT = "bike/001/heartbeat"; // 心跳包
+const char *TOPIC_AUTH = "bike/001/auth";           // 认证请求
+const char *TOPIC_GPS = "bike/001/gps";             // GPS 上报
+const char *TOPIC_COMMAND = "server/001/command";   // 服务器指令
 
 // 后端 API 配置
-const char* API_SERVER = "26.210.196.161";        // 后端服务器 IP（请修改）
-const int API_PORT = 8000;                       // API 端口
+const char *API_SERVER = "26.210.196.161"; // 后端服务器 IP（请修改）
+const int API_PORT = 8000;                 // API 端口
 
 // 引脚定义
 // RC522 RFID 引脚(硬件SPI)
-#define RFID_SDA_PIN 15   // D8 - GPIO15 (CS)
-#define RFID_RST_PIN -1   // RST 不使用（某些 RC522 模块可以不连接 RST）
+#define RFID_SDA_PIN 15 // D8 - GPIO15 (CS)
+#define RFID_RST_PIN -1 // RST 不使用（某些 RC522 模块可以不连接 RST）
 // 硬件SPI固定引脚：
 // SCK  = GPIO14 (D5)
 // MOSI = GPIO13 (D7)
@@ -63,19 +63,19 @@ const int API_PORT = 8000;                       // API 端口
 // 默认波特率：9600
 // 供电：3.3V-5.0V
 // 注意：只连接 GPS TX → ESP RX，不连接 GPS RX（单向接收）
-#define GPS_RX_PIN 16    // D0 - GPIO16 (ESP的RX，连接GPS的TX)
-#define GPS_TX_PIN -1    // 不使用（GPS 不需要接收 ESP 的命令）
+#define GPS_RX_PIN 16 // D0 - GPIO16 (ESP的RX，连接GPS的TX)
+#define GPS_TX_PIN -1 // 不使用（GPS 不需要接收 ESP 的命令）
 
 // 蜂鸣器/LED引脚
-#define BUZZER_PIN 4     // D2 - GPIO4
+#define BUZZER_PIN 4 // D2 - GPIO4
 // 注意：GPIO16 用于 GPS，GPIO12 (MISO) 用于 RC522
 
 // OLED 引脚（软件SPI，与RC522共用硬件SPI引脚）
-#define OLED_CLK   14    // D5 - GPIO14 (SCK，与RC522共用)
-#define OLED_MOSI  13    // D7 - GPIO13 (MOSI，与RC522共用)
-#define OLED_RST   2     // D4 - GPIO2 (RES)
-#define OLED_DC    5     // D1 - GPIO5 (DC)
-#define OLED_CS    0     // D3 - GPIO0 (CS)
+#define OLED_CLK 14  // D5 - GPIO14 (SCK，与RC522共用)
+#define OLED_MOSI 13 // D7 - GPIO13 (MOSI，与RC522共用)
+#define OLED_RST 2   // D4 - GPIO2 (RES)
+#define OLED_DC 5    // D1 - GPIO5 (DC)
+#define OLED_CS 0    // D3 - GPIO0 (CS)
 
 // OLED屏幕尺寸
 #define SCREEN_WIDTH 128
@@ -87,15 +87,15 @@ const int API_PORT = 8000;                       // API 端口
 // GPIO12 (D6) → MISO (仅RFID使用)
 
 // 时间配置（毫秒）
-const unsigned long HEARTBEAT_INTERVAL = 10000;    // 心跳间隔 10 秒
-const unsigned long GPS_REPORT_INTERVAL = 5000;    // GPS 上报间隔 5 秒
-const unsigned long WIFI_RETRY_INTERVAL = 20000;   // WiFi 重连间隔 20 秒
-const unsigned long MQTT_RETRY_INTERVAL = 5000;    // MQTT 重连间隔 5 秒
+const unsigned long HEARTBEAT_INTERVAL = 10000;     // 心跳间隔 10 秒
+const unsigned long GPS_REPORT_INTERVAL = 5000;     // GPS 上报间隔 5 秒
+const unsigned long WIFI_RETRY_INTERVAL = 20000;    // WiFi 重连间隔 20 秒
+const unsigned long MQTT_RETRY_INTERVAL = 5000;     // MQTT 重连间隔 5 秒
 const unsigned long DISPLAY_UPDATE_INTERVAL = 1000; // OLED 刷新间隔 1 秒
 
 // 费用配置
-const float PRICE_PER_MINUTE = 0.1;               // 每分钟 0.1 元
-const float MIN_BALANCE = 1.0;                     // 最低余额 1 元
+const float PRICE_PER_MINUTE = 0.1; // 每分钟 0.1 元
+const float MIN_BALANCE = 1.0;      // 最低余额 1 元
 
 // =========================== 全局变量 ===========================
 
@@ -112,10 +112,11 @@ MFRC522 rfid(RFID_SDA_PIN, RFID_RST_PIN);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RST, OLED_CS);
 
 // 状态变量
-enum BikeState {
-  STATE_IDLE,       // 待机状态
-  STATE_RIDING,     // 骑行状态
-  STATE_PROCESSING  // 处理中（开锁/还车）
+enum BikeState
+{
+  STATE_IDLE,      // 待机状态
+  STATE_RIDING,    // 骑行状态
+  STATE_PROCESSING // 处理中（开锁/还车）
 };
 
 BikeState currentState = STATE_IDLE;
@@ -128,9 +129,9 @@ unsigned long rideStartTime = 0; // 骑行开始时间
 int currentOrderID = 0;          // 当前订单 ID
 
 // GPS 数据（使用模拟坐标用于测试）
-float currentLat = 30.3078;  // 模拟坐标：杭州钱塘区
+float currentLat = 30.3078; // 模拟坐标：杭州钱塘区
 float currentLng = 120.4851;
-bool gpsValid = true;  // 设为true以便测试后端功能
+bool gpsValid = true; // 设为true以便测试后端功能
 
 // 计时器
 unsigned long lastHeartbeatTime = 0;
@@ -158,16 +159,16 @@ void loopGPS();
 void loopOLED();
 void loopBuzzer();
 
-void mqttCallback(char* topic, byte* payload, unsigned int length);
+void mqttCallback(char *topic, byte *payload, unsigned int length);
 void sendHeartbeat();
 void sendGPSReport();
 void sendAuthRequest(String action, String cardUID);
-bool processServerResponse(WiFiClient& client);
+bool processServerResponse(WiFiClient &client);
 
 void updateOLEDIdle();
 void updateOLEDRiding();
 void updateOLEDProcessing();
-void drawCenteredText(const char* text, int y, int size);
+void drawCenteredText(const char *text, int y, int size);
 void drawProgressBar(int progress);
 
 void playBeep(int times, int duration);
@@ -181,24 +182,25 @@ String formatFloat(float value, int decimals);
 /**
  * 初始化函数（上电后只执行一次）
  */
-void setup() {
+void setup()
+{
   // *** 关键修复：按 SPI/I2C 冲突文章建议，先配置所有片选引脚 ***
-  
+
   // 1. OLED CS (GPIO0) - 必须先拉高，否则进入烧录模式
   pinMode(OLED_CS, OUTPUT);
   digitalWrite(OLED_CS, HIGH);
-  
+
   // 2. RC522 SS (GPIO15) - 拉高禁用，避免总线竞争
   pinMode(RFID_SDA_PIN, OUTPUT);
   digitalWrite(RFID_SDA_PIN, HIGH);
-  
+
   // 3. OLED RES (GPIO2) - 启动时必须为 HIGH
   pinMode(OLED_RST, OUTPUT);
   digitalWrite(OLED_RST, HIGH);
-  
+
   // 4. GPIO12 (MISO) - 配置为输入
   pinMode(12, INPUT);
-  
+
   // 初始化串口
   Serial.begin(9600);
   Serial.println();
@@ -209,9 +211,9 @@ void setup() {
   Serial.println(F("================================="));
 
   // 初始化各模块（顺序重要）
-  setupBuzzer();  // 蜂鸣器初始化
-  setupOLED();    // OLED显示屏
-  setupRFID();    // RC522读卡器
+  setupBuzzer(); // 蜂鸣器初始化
+  setupOLED();   // OLED显示屏
+  setupRFID();   // RC522读卡器
   // setupGPS();  // 暂时跳过GPS初始化
   setupWiFi();
   setupMQTT();
@@ -227,7 +229,8 @@ void setup() {
 /**
  * WiFi 初始化
  */
-void setupWiFi() {
+void setupWiFi()
+{
   Serial.println(F("📡 连接 WiFi..."));
 
   WiFi.mode(WIFI_STA);
@@ -235,17 +238,21 @@ void setupWiFi() {
 
   // 等待连接（最多 30 秒）
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+  while (WiFi.status() != WL_CONNECTED && attempts < 30)
+  {
     delay(1000);
     Serial.print(F("."));
     attempts++;
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
+  if (WiFi.status() == WL_CONNECTED)
+  {
     Serial.println();
     Serial.print(F(" WiFi 已连接: "));
     Serial.println(WiFi.localIP());
-  } else {
+  }
+  else
+  {
     Serial.println();
     Serial.println(F(" WiFi 连接失败，将尝试重连"));
   }
@@ -254,7 +261,8 @@ void setupWiFi() {
 /**
  * MQTT 初始化
  */
-void setupMQTT() {
+void setupMQTT()
+{
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
   Serial.println(F("📡 MQTT 已配置"));
@@ -265,16 +273,17 @@ void setupMQTT() {
  * 注意：MISO被蜂鸣器占用，只能读取卡片UID，无法读取扇区数据
  * 这对共享单车项目足够（UID发送给后端验证）
  */
-void setupRFID() {
+void setupRFID()
+{
   // 先初始化 SPI 总线
   SPI.begin();
-  
+
   // 确保 SS 引脚拉高后再初始化 RC522
   digitalWrite(RFID_SDA_PIN, HIGH);
   delay(10);
-  
+
   rfid.PCD_Init();
-  
+
   // 读取版本号验证通信
   byte version = rfid.PCD_ReadRegister(rfid.VersionReg);
   Serial.print(F("✓ RFID 读卡器已初始化 (版本: 0x"));
@@ -286,7 +295,8 @@ void setupRFID() {
 /**
  * GPS 模块初始化（暂时跳过）
  */
-void setupGPS() {
+void setupGPS()
+{
   // 暂时跳过GPS初始化，使用模拟坐标
   Serial.println(F("⚡ GPS 模块跳过 - 使用模拟坐标"));
   Serial.println(F("   模拟位置: 杭州钱塘区"));
@@ -299,12 +309,14 @@ void setupGPS() {
 /**
  * OLED 显示屏初始化
  */
-void setupOLED() {
+void setupOLED()
+{
   // 按文章建议：访问 I2C 设备前确保 SPI 处于非活动状态
   digitalWrite(RFID_SDA_PIN, HIGH);
-  
+
   // 初始化OLED，使用软件SPI接口（通过&SPI参数使用硬件SPI引脚）
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+  {
     Serial.println(F("  OLED 初始化失败！"));
     return;
   }
@@ -324,7 +336,8 @@ void setupOLED() {
  * 注意：GPIO12 (MISO) 设为输入上拉以稳定SPI总线（不接MISO线）
  * 副作用：RC522无法读取扇区数据，只能读取UID（对本项目足够）
  */
-void setupBuzzer() {
+void setupBuzzer()
+{
   pinMode(BUZZER_PIN, OUTPUT);
   // 初始化为低电平，不响
   digitalWrite(BUZZER_PIN, LOW);
@@ -336,7 +349,8 @@ void setupBuzzer() {
 /**
  * 主循环函数（一直重复执行）
  */
-void loop() {
+void loop()
+{
   // 处理 WiFi 连接
   loopWiFi();
 
@@ -356,16 +370,20 @@ void loop() {
   unsigned long currentMillis = millis();
 
   // 心跳包发送
-  if (currentMillis - lastHeartbeatTime >= HEARTBEAT_INTERVAL) {
-    if (mqttClient.connected()) {
+  if (currentMillis - lastHeartbeatTime >= HEARTBEAT_INTERVAL)
+  {
+    if (mqttClient.connected())
+    {
       sendHeartbeat();
       lastHeartbeatTime = currentMillis;
     }
   }
 
   // GPS 数据上报
-  if (currentMillis - lastGPSReportTime >= GPS_REPORT_INTERVAL) {
-    if (mqttClient.connected() && currentState == STATE_RIDING) {
+  if (currentMillis - lastGPSReportTime >= GPS_REPORT_INTERVAL)
+  {
+    if (mqttClient.connected() && currentState == STATE_RIDING)
+    {
       sendGPSReport();
       lastGPSReportTime = currentMillis;
     }
@@ -380,12 +398,15 @@ void loop() {
 /**
  * WiFi 循环处理（自动重连）
  */
-void loopWiFi() {
-  if (WiFi.status() != WL_CONNECTED) {
+void loopWiFi()
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
     unsigned long currentMillis = millis();
 
     // 定时尝试重连
-    if (currentMillis - lastWifiRetryTime >= WIFI_RETRY_INTERVAL) {
+    if (currentMillis - lastWifiRetryTime >= WIFI_RETRY_INTERVAL)
+    {
       Serial.println(F(" 尝试重新连接 WiFi..."));
       WiFi.disconnect();
       WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -399,33 +420,41 @@ void loopWiFi() {
 /**
  * MQTT 循环处理（自动重连和消息接收）
  */
-void loopMQTT() {
+void loopMQTT()
+{
   // 如果未连接，尝试连接
-  if (!mqttClient.connected()) {
+  if (!mqttClient.connected())
+  {
     unsigned long currentMillis = millis();
 
-    if (currentMillis - lastMqttRetryTime >= MQTT_RETRY_INTERVAL) {
+    if (currentMillis - lastMqttRetryTime >= MQTT_RETRY_INTERVAL)
+    {
       Serial.println(F(" 尝试连接 MQTT Broker..."));
 
       // 生成随机 Client ID
       String clientId = "bike_001_";
       clientId += String(random(0xffff), HEX);
 
-      if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+      if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD))
+      {
         Serial.println(F(" MQTT 已连接"));
 
         // 订阅指令主题
         mqttClient.subscribe(TOPIC_COMMAND);
         Serial.print(F(" 已订阅主题: "));
         Serial.println(TOPIC_COMMAND);
-      } else {
+      }
+      else
+      {
         Serial.print(F(" MQTT 连接失败, rc="));
         Serial.println(mqttClient.state());
       }
 
       lastMqttRetryTime = currentMillis;
     }
-  } else {
+  }
+  else
+  {
     // 已连接，处理循环
     mqttClient.loop();
   }
@@ -434,7 +463,8 @@ void loopMQTT() {
 /**
  * MQTT 消息回调函数
  */
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+void mqttCallback(char *topic, byte *payload, unsigned int length)
+{
   Serial.print(F(" 收到 MQTT 消息 ["));
   Serial.print(topic);
   Serial.print(F("]: "));
@@ -449,16 +479,18 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   StaticJsonDocument<256> doc;
   DeserializationError error = deserializeJson(doc, message);
 
-  if (error) {
+  if (error)
+  {
     Serial.print(F(" JSON 解析失败: "));
     Serial.println(error.c_str());
     return;
   }
 
   // 提取指令
-  const char* action = doc["action"];  // unlock, lock, force_lock
+  const char *action = doc["action"]; // unlock, lock, force_lock
 
-  if (strcmp(action, "unlock") == 0) {
+  if (strcmp(action, "unlock") == 0)
+  {
     // 开锁指令
     int order_id = doc["order_id"];
     float balance = doc["balance"];
@@ -478,8 +510,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     // 显示骑行界面
     displayMessage = "骑行中";
     displaySubMessage = "再次刷卡还车";
-
-  } else if (strcmp(action, "lock") == 0) {
+  }
+  else if (strcmp(action, "lock") == 0)
+  {
     // 关锁指令
     float cost = doc["cost"];
     float new_balance = doc["new_balance"];
@@ -515,7 +548,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 /**
  * GPS 循环处理（暂时跳过，使用模拟坐标）
  */
-void loopGPS() {
+void loopGPS()
+{
   // 暂时注释GPS处理，使用模拟坐标测试其他功能
   // while (GPSSerial.available() > 0) {
   //   gps.encode(GPSSerial.read());
@@ -528,30 +562,34 @@ void loopGPS() {
 /**
  * RFID 循环处理（读取卡片）
  */
-void loopRFID() {
+void loopRFID()
+{
   // 如果正在处理中，不读取新卡
-  if (currentState == STATE_PROCESSING) {
+  if (currentState == STATE_PROCESSING)
+  {
     return;
   }
 
   // 按文章建议：操作 RC522 前启动 SPI 事务
   SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
   digitalWrite(RFID_SDA_PIN, LOW);
-  
+
   // 检查是否有新卡
-  if (!rfid.PICC_IsNewCardPresent()) {
+  if (!rfid.PICC_IsNewCardPresent())
+  {
     digitalWrite(RFID_SDA_PIN, HIGH);
     SPI.endTransaction();
     return;
   }
 
   // 读取卡片序列号
-  if (!rfid.PICC_ReadCardSerial()) {
+  if (!rfid.PICC_ReadCardSerial())
+  {
     digitalWrite(RFID_SDA_PIN, HIGH);
     SPI.endTransaction();
     return;
   }
-  
+
   // 结束 SPI 事务
   digitalWrite(RFID_SDA_PIN, HIGH);
   SPI.endTransaction();
@@ -565,14 +603,20 @@ void loopRFID() {
   playBeep(1, 100);
 
   // 根据当前状态处理
-  if (currentState == STATE_IDLE) {
+  if (currentState == STATE_IDLE)
+  {
     // 待机状态：开锁请求
     handleUnlockRequest(cardUID);
-  } else if (currentState == STATE_RIDING) {
+  }
+  else if (currentState == STATE_RIDING)
+  {
     // 骑行状态：还车请求
-    if (cardUID == currentCardUID) {
+    if (cardUID == currentCardUID)
+    {
       handleLockRequest(cardUID);
-    } else {
+    }
+    else
+    {
       Serial.println(F("  警告: 卡片不匹配"));
       displayMessage = "卡片不匹配";
       displaySubMessage = "请使用原卡片";
@@ -591,7 +635,8 @@ void loopRFID() {
 /**
  * 处理开锁请求
  */
-void handleUnlockRequest(String cardUID) {
+void handleUnlockRequest(String cardUID)
+{
   Serial.println(F(" 处理开锁请求..."));
 
   // 更新状态
@@ -609,7 +654,8 @@ void handleUnlockRequest(String cardUID) {
 /**
  * 处理还车请求
  */
-void handleLockRequest(String cardUID) {
+void handleLockRequest(String cardUID)
+{
   Serial.println(F(" 处理还车请求..."));
 
   // 更新状态
@@ -637,7 +683,7 @@ void handleLockRequest(String cardUID) {
   // mqttClient.publish("bike/001/lock", message.c_str());
 
   Serial.println(F("  注意: 还车功能需要后端 API 支持"));
-  
+
   currentState = STATE_IDLE;
 }
 
@@ -646,12 +692,14 @@ void handleLockRequest(String cardUID) {
 /**
  * 发送认证请求到后端 API
  */
-void sendAuthRequest(String action, String cardUID) {
+void sendAuthRequest(String action, String cardUID)
+{
   Serial.println(F(" 发送 HTTP 请求..."));
 
   // 连接后端服务器
   WiFiClient client;
-  if (!client.connect(API_SERVER, API_PORT)) {
+  if (!client.connect(API_SERVER, API_PORT))
+  {
     Serial.println(F(" 无法连接到后端服务器"));
     displayMessage = "连接失败";
     displaySubMessage = "请检查网络";
@@ -681,7 +729,8 @@ void sendAuthRequest(String action, String cardUID) {
   bool success = processServerResponse(client);
   client.stop();
 
-  if (!success) {
+  if (!success)
+  {
     Serial.println(F(" 认证失败"));
     displayMessage = "认证失败";
     displaySubMessage = "请重试";
@@ -696,11 +745,14 @@ void sendAuthRequest(String action, String cardUID) {
 /**
  * 处理服务器响应
  */
-bool processServerResponse(WiFiClient& client) {
+bool processServerResponse(WiFiClient &client)
+{
   // 等待响应（超时 5 秒）
   unsigned long timeout = millis();
-  while (client.available() == 0) {
-    if (millis() - timeout > 5000) {
+  while (client.available() == 0)
+  {
+    if (millis() - timeout > 5000)
+    {
       Serial.println(F(" 请求超时"));
       return false;
     }
@@ -708,10 +760,13 @@ bool processServerResponse(WiFiClient& client) {
 
   // 跳过 HTTP 头
   bool blankLine = false;
-  while (client.available()) {
+  while (client.available())
+  {
     String line = client.readStringUntil('\r');
-    if (line == "\n") {
-      if (blankLine) break;
+    if (line == "\n")
+    {
+      if (blankLine)
+        break;
       blankLine = true;
     }
   }
@@ -725,7 +780,8 @@ bool processServerResponse(WiFiClient& client) {
   StaticJsonDocument<512> doc;
   DeserializationError error = deserializeJson(doc, responseBody);
 
-  if (error) {
+  if (error)
+  {
     Serial.print(F(" JSON 解析失败: "));
     Serial.println(error.c_str());
     return false;
@@ -733,8 +789,9 @@ bool processServerResponse(WiFiClient& client) {
 
   // 检查响应状态
   bool success = doc["success"];
-  if (!success) {
-    const char* message = doc["message"];
+  if (!success)
+  {
+    const char *message = doc["message"];
     Serial.print(F(" 服务器返回错误: "));
     Serial.println(message);
     displayMessage = message;
@@ -768,7 +825,8 @@ bool processServerResponse(WiFiClient& client) {
 /**
  * 发送心跳包
  */
-void sendHeartbeat() {
+void sendHeartbeat()
+{
   StaticJsonDocument<256> doc;
   doc["timestamp"] = millis();
   doc["lat"] = currentLat;
@@ -779,9 +837,12 @@ void sendHeartbeat() {
   String message;
   serializeJson(doc, message);
 
-  if (mqttClient.publish(TOPIC_HEARTBEAT, message.c_str())) {
+  if (mqttClient.publish(TOPIC_HEARTBEAT, message.c_str()))
+  {
     Serial.println(F(" 心跳包已发送"));
-  } else {
+  }
+  else
+  {
     Serial.println(F(" 心跳包发送失败"));
   }
 }
@@ -789,22 +850,26 @@ void sendHeartbeat() {
 /**
  * 发送 GPS 上报
  */
-void sendGPSReport() {
+void sendGPSReport()
+{
   StaticJsonDocument<256> doc;
   doc["lat"] = currentLat;
   doc["lng"] = currentLng;
-  doc["mode"] = "real";  // real 或 simulation
+  doc["mode"] = "real"; // real 或 simulation
   doc["timestamp"] = millis();
 
   String message;
   serializeJson(doc, message);
 
-  if (mqttClient.publish(TOPIC_GPS, message.c_str())) {
+  if (mqttClient.publish(TOPIC_GPS, message.c_str()))
+  {
     Serial.print(F(" GPS 已上报: "));
     Serial.print(currentLat, 6);
     Serial.print(F(", "));
     Serial.println(currentLng, 6);
-  } else {
+  }
+  else
+  {
     Serial.println(F(" GPS 上报失败"));
   }
 }
@@ -814,18 +879,25 @@ void sendGPSReport() {
 /**
  * OLED 循环处理（根据状态更新显示）
  */
-void loopOLED() {
+void loopOLED()
+{
   unsigned long currentMillis = millis();
 
   // 定时刷新显示
-  if (currentMillis - lastDisplayUpdate >= DISPLAY_UPDATE_INTERVAL) {
+  if (currentMillis - lastDisplayUpdate >= DISPLAY_UPDATE_INTERVAL)
+  {
     display.clearDisplay();
 
-    if (currentState == STATE_IDLE) {
+    if (currentState == STATE_IDLE)
+    {
       updateOLEDIdle();
-    } else if (currentState == STATE_RIDING) {
+    }
+    else if (currentState == STATE_RIDING)
+    {
       updateOLEDRiding();
-    } else if (currentState == STATE_PROCESSING) {
+    }
+    else if (currentState == STATE_PROCESSING)
+    {
       updateOLEDProcessing();
     }
 
@@ -837,10 +909,11 @@ void loopOLED() {
 /**
  * 更新待机界面
  */
-void updateOLEDIdle() {
+void updateOLEDIdle()
+{
   // 按文章建议：访问 OLED 前确保 SPI 非活动
   digitalWrite(RFID_SDA_PIN, HIGH);
-  
+
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
@@ -856,11 +929,14 @@ void updateOLEDIdle() {
   // GPS 状态（模拟坐标）
   display.setCursor(0, 48);
   display.print("GPS: ");
-  if (gpsValid) {
+  if (gpsValid)
+  {
     display.print(currentLat, 4);
     display.print(",");
     display.print(currentLng, 4);
-  } else {
+  }
+  else
+  {
     display.println("Simulated");
   }
 
@@ -871,10 +947,11 @@ void updateOLEDIdle() {
 /**
  * 更新骑行界面
  */
-void updateOLEDRiding() {
+void updateOLEDRiding()
+{
   // 按文章建议：访问 OLED 前确保 SPI 非活动
   digitalWrite(RFID_SDA_PIN, HIGH);
-  
+
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
@@ -906,10 +983,11 @@ void updateOLEDRiding() {
 /**
  * 更新处理中界面
  */
-void updateOLEDProcessing() {
+void updateOLEDProcessing()
+{
   // 按文章建议：访问 OLED 前确保 SPI 非活动
   digitalWrite(RFID_SDA_PIN, HIGH);
-  
+
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
@@ -928,11 +1006,12 @@ void updateOLEDProcessing() {
  * @param y Y坐标
  * @param size 文字大小 (1=小, 2=大)
  */
-void drawCenteredText(const char* text, int y, int size) {
+void drawCenteredText(const char *text, int y, int size)
+{
   display.setTextSize(size);
   int16_t x, y1;
   uint16_t w, h;
-  display.getTextBounds((char*)text, 0, y, &x, &y1, &w, &h);
+  display.getTextBounds((char *)text, 0, y, &x, &y1, &w, &h);
   display.setCursor((SCREEN_WIDTH - w) / 2, y);
   display.println(text);
 }
@@ -941,7 +1020,8 @@ void drawCenteredText(const char* text, int y, int size) {
  * 绘制进度条
  * @param progress 进度百分比 (0-100)
  */
-void drawProgressBar(int progress) {
+void drawProgressBar(int progress)
+{
   int barWidth = 100;
   int barHeight = 10;
   int x = (SCREEN_WIDTH - barWidth) / 2;
@@ -960,7 +1040,8 @@ void drawProgressBar(int progress) {
 /**
  * 蜂鸣器循环处理（暂无实际功能）
  */
-void loopBuzzer() {
+void loopBuzzer()
+{
   // 蜂鸣器控制是直接调用，无需循环处理
 }
 
@@ -969,12 +1050,15 @@ void loopBuzzer() {
  * @param times 播放次数
  * @param duration 每次持续时间（毫秒）
  */
-void playBeep(int times, int duration) {
-  for (int i = 0; i < times; i++) {
+void playBeep(int times, int duration)
+{
+  for (int i = 0; i < times; i++)
+  {
     controlBuzzer(true);
     delay(duration);
     controlBuzzer(false);
-    if (i < times - 1) {
+    if (i < times - 1)
+    {
       delay(100);
     }
   }
@@ -984,7 +1068,8 @@ void playBeep(int times, int duration) {
  * 控制蜂鸣器开关
  * @param state true=开, false=关
  */
-void controlBuzzer(bool state) {
+void controlBuzzer(bool state)
+{
   digitalWrite(BUZZER_PIN, state ? HIGH : LOW);
 }
 
@@ -993,10 +1078,13 @@ void controlBuzzer(bool state) {
 /**
  * 获取 RFID 卡片 UID
  */
-String getRFIDUID() {
+String getRFIDUID()
+{
   String uid = "";
-  for (byte i = 0; i < rfid.uid.size; i++) {
-    if (rfid.uid.uidByte[i] < 0x10) {
+  for (byte i = 0; i < rfid.uid.size; i++)
+  {
+    if (rfid.uid.uidByte[i] < 0x10)
+    {
       uid += "0";
     }
     uid += String(rfid.uid.uidByte[i], HEX);
@@ -1008,7 +1096,8 @@ String getRFIDUID() {
 /**
  * 格式化浮点数
  */
-String formatFloat(float value, int decimals) {
+String formatFloat(float value, int decimals)
+{
   String result = "";
   char buffer[16];
   dtostrf(value, 0, decimals, buffer);
