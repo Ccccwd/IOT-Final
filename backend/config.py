@@ -6,10 +6,10 @@ class Settings(BaseSettings):
     """应用配置"""
 
     # 数据库配置
-    DATABASE_URL: str = "mysql+pymysql://bikeuser:bikepass123@localhost:3307/bikesharing"
+    DATABASE_URL: str = "mysql+pymysql://bikeuser:bikepass123@localhost:3307/bikesharing?charset=utf8mb4"
 
     # MQTT 配置
-    MQTT_BROKER: str = "broker.emqx.io"
+    MQTT_BROKER: str = "broker.hivemq.com"  # HiveMQ 公共 broker（无需认证）
     MQTT_PORT: int = 1883
     MQTT_USERNAME: str = ""
     MQTT_PASSWORD: str = ""

@@ -19,7 +19,7 @@ import {
 
 const { Option } = Select;
 
-function ControlPanel({ bikes, loading, onRefresh }) {
+function ControlPanel({ bikes, loading, onRefresh, onBikeSelect }) {
   const [filter, setFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
 
@@ -189,7 +189,12 @@ function ControlPanel({ bikes, loading, onRefresh }) {
             return '';
           }}
           onRow={(bike) => ({
-            onClick: () => console.log('点击车辆:', bike),
+            onClick: () => {
+              console.log('[ControlPanel] 点击车辆:', bike.bike_code);
+              if (onBikeSelect) {
+                onBikeSelect(bike);
+              }
+            },
             style: { cursor: 'pointer' },
           })}
         />

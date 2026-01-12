@@ -13,6 +13,9 @@ import {
   Popconfirm,
   Tooltip,
   Select,
+  Statistic,
+  Row,
+  Col,
 } from 'antd';
 import {
   PlusOutlined,
@@ -21,6 +24,7 @@ import {
   DeleteOutlined,
   ReloadOutlined,
   UserOutlined,
+  WalletOutlined,
 } from '@ant-design/icons';
 import { userAPI } from '../services/api';
 
@@ -31,10 +35,14 @@ function UserManagement() {
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [bindCardModalVisible, setBindCardModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [topupModalVisible, setTopupModalVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [modalType, setModalType] = useState('register'); // register, registerWithCard
   const [form] = Form.useForm();
   const [bindCardForm] = Form.useForm();
+  const [editForm] = Form.useForm();
+  const [topupForm] = Form.useForm();
 
   // 获取用户列表
   const fetchUsers = async () => {
@@ -72,6 +80,61 @@ function UserManagement() {
     setSelectedUser(user);
     bindCardForm.resetFields();
     setBindCardModalVisible(true);
+  };
+
+  // 打开编辑模态框
+  const openEditModal = (user) => {
+    setSelectedUser(user);
+    editForm.setFieldsValue({
+      username: user.username,
+      phone: user.phone,
+      status: user.status,
+      rfid_card: user.rfid_card, // 只读显示
+    });
+    setEditModalVisible(true);
+  };
+
+  // 打开充值模态框
+  const openTopupModal = (user) => {
+    setSelectedUser(user);
+    topupForm.resetFields();
+    setTopupModalVisible(true);
+  };
+
+  // 提交编辑
+  const handleEdit = async (values) => {
+    try {
+      // 只传递可编辑的字段（不包括rfid_card）
+      const updateData = {
+        username: values.username,
+        phone: values.phone,
+        status: values.status,
+      };
+
+      await userAPI.updateUser(selectedUser.id, updateData);
+      message.success('用户信息更新成功');
+      setEditModalVisible(false);
+      editForm.resetFields();
+      fetchUsers();
+    } catch (error) {
+      message.error('编辑失败: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  // 提交充值
+  const handleTopup = async (values) => {
+    try {
+      await userAPI.topup({
+        user_id: selectedUser.id,
+        amount: values.amount,
+      });
+      message.success('充值成功');
+      setTopupModalVisible(false);
+      topupForm.resetFields();
+      fetchUsers();
+    } catch (error) {
+      message.error('充值失败: ' + (error.response?.data?.detail || error.message));
+    }
   };
 
   // 提交注册
@@ -183,7 +246,7 @@ function UserManagement() {
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 250,
       render: (_, record) => (
         <Space size="small">
           {!record.rfid_card && (
@@ -198,13 +261,26 @@ function UserManagement() {
               </Button>
             </Tooltip>
           )}
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => console.log('编辑用户:', record)}
-          >
-            编辑
-          </Button>
+          <Tooltip title="编辑用户信息">
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => openEditModal(record)}
+            >
+              编辑
+            </Button>
+          </Tooltip>
+          <Tooltip title="账户充值">
+            <Button
+              type="primary"
+              size="small"
+              icon={<WalletOutlined />}
+              onClick={() => openTopupModal(record)}
+              style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+            >
+              充值
+            </Button>
+          </Tooltip>
         </Space>
       ),
     },
@@ -305,6 +381,110 @@ function UserManagement() {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 编辑用户模态框 */}
+      <Modal
+        title="编辑用户"
+        open={editModalVisible}
+        onCancel={() => setEditModalVisible(false)}
+        onOk={() => editForm.submit()}
+        destroyOnHidden
+      >
+        {selectedUser && (
+          <div>
+            <p>
+              <strong>用户 ID：</strong>{selectedUser.id}
+            </p>
+            <Form
+              form={editForm}
+              layout="vertical"
+              onFinish={handleEdit}
+            >
+              <Form.Item
+                label="RFID 卡号"
+                name="rfid_card"
+              >
+                <Input disabled placeholder="RFID卡号不可编辑" />
+              </Form.Item>
+
+              <Form.Item
+                label="用户名"
+                name="username"
+                rules={[{ required: true, message: '请输入用户名' }]}
+              >
+                <Input placeholder="请输入用户名" />
+              </Form.Item>
+
+              <Form.Item
+                label="手机号"
+                name="phone"
+              >
+                <Input placeholder="请输入手机号" />
+              </Form.Item>
+
+              <Form.Item
+                label="状态"
+                name="status"
+                rules={[{ required: true, message: '请选择状态' }]}
+              >
+                <Select>
+                  <Option value="active">正常</Option>
+                  <Option value="frozen">冻结</Option>
+                </Select>
+              </Form.Item>
+            </Form>
+          </div>
+        )}
+      </Modal>
+
+      {/* 充值模态框 */}
+      <Modal
+        title="账户充值"
+        open={topupModalVisible}
+        onCancel={() => setTopupModalVisible(false)}
+        onOk={() => topupForm.submit()}
+        destroyOnHidden
+      >
+        {selectedUser && (
+          <div>
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={12}>
+                <Statistic title="用户" value={selectedUser.username || '未设置'} />
+              </Col>
+              <Col span={12}>
+                <Statistic
+                  title="当前余额"
+                  value={selectedUser.balance}
+                  precision={2}
+                  prefix="¥"
+                />
+              </Col>
+            </Row>
+            <Form
+              form={topupForm}
+              layout="vertical"
+              onFinish={handleTopup}
+            >
+              <Form.Item
+                label="充值金额"
+                name="amount"
+                rules={[
+                  { required: true, message: '请输入充值金额' },
+                  { type: 'number', min: 0.01, message: '充值金额必须大于0' },
+                ]}
+              >
+                <InputNumber
+                  min={0.01}
+                  precision={2}
+                  style={{ width: '100%' }}
+                  prefix="¥"
+                  placeholder="请输入充值金额"
+                />
+              </Form.Item>
+            </Form>
+          </div>
+        )}
       </Modal>
 
       {/* 绑定卡号模态框 */}

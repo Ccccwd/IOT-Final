@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List
 from datetime import datetime, timedelta
 from decimal import Decimal
+import asyncio
 
 from database import engine, get_db
 from models import (
@@ -12,16 +13,22 @@ from models import (
     BikeStatus, OrderStatus, LogType
 )
 from schemas import (
-    UserCreate, UserCreateWithCard, UserResponse, UserTopup,
+    UserCreate, UserCreateWithCard, UserUpdate, UserResponse, UserTopup,
     BindCardRequest, AutoRegisterRequest,
     BikeCreate, BikeResponse, BikeListResponse, BikeUpdate,
     OrderUnlock, OrderLock, OrderResponse, LockResponse,
-    RFIDAuthRequest, RFIDAuthResponse,
+    RFIDAuthRequest, RFIDAuthResponse, HardwareUnlockRequest,
     AdminCommand, DashboardStats, MessageResponse
 )
 from mqtt_handler import mqtt_client
 from config import settings
 import logging
+
+# WebSocket 支持
+from websocket_server import websocket_manager, setup_mqtt_forwarding
+
+# MQTT消息处理
+from mqtt_message_handler import setup_mqtt_subscriptions
 
 # 配置日志
 logging.basicConfig(
@@ -53,11 +60,29 @@ app.add_middleware(
 async def startup_event():
     """应用启动时执行"""
     logger.info("FastAPI 应用启动中...")
-    # 启动 MQTT 客户端
+
+    # 首先设置事件循环（必须在 MQTT 连接之前）
+    try:
+        loop = asyncio.get_running_loop()
+        websocket_manager.set_event_loop(loop)
+        logger.info(f"✓ 事件循环已设置: {loop}")
+    except Exception as e:
+        logger.error(f"✗ 设置事件循环失败: {e}")
+        return
+
+    # 然后启动 MQTT 客户端
     if mqtt_client.connect():
-        logger.info("MQTT 客户端启动成功")
+        logger.info("✓ MQTT 客户端启动成功")
+
+        # 设置 MQTT 消息转发到 WebSocket
+        setup_mqtt_forwarding()
+        logger.info("✓ WebSocket MQTT 转发已启用")
+
+        # 设置 MQTT 消息处理（更新数据库）
+        setup_mqtt_subscriptions(mqtt_client, get_db)
+        logger.info("✓ MQTT 消息处理已启用（心跳/GPS自动更新）")
     else:
-        logger.warning("MQTT 客户端启动失败")
+        logger.warning("✗ MQTT 客户端启动失败")
 
 
 @app.on_event("shutdown")
@@ -169,6 +194,33 @@ async def get_user(user_id: int, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
+    return user
+
+
+@app.put("/api/users/{user_id}", response_model=UserResponse, tags=["用户管理"])
+async def update_user(
+    user_id: int,
+    user_update: UserUpdate,
+    db: Session = Depends(get_db)
+):
+    """更新用户信息（不包括RFID卡号）"""
+    # 检查用户是否存在
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    # 更新字段（只更新提供的字段）
+    update_data = user_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+
+    db.commit()
+    db.refresh(user)
+
+    logger.info(f"用户信息更新: ID={user_id}, 字段={list(update_data.keys())}")
     return user
 
 
@@ -305,6 +357,79 @@ async def get_bike_trajectory(
 
 
 # ========== 订单相关 API ==========
+
+@app.post("/api/hardware/unlock", tags=["硬件接口"])
+async def hardware_unlock(request: HardwareUnlockRequest, db: Session = Depends(get_db)):
+    """硬件端开锁接口（自动匹配车辆）"""
+    # 1. 根据车辆编号查找车辆
+    bike = db.query(Bike).filter(Bike.bike_code == request.bike_code).first()
+    if not bike:
+        return {
+            "success": False,
+            "message": f"车辆 {request.bike_code} 不存在，请先在系统中注册车辆"
+        }
+    
+    # 2. 查找用户（如果不存在则自动注册）
+    user = db.query(User).filter(User.rfid_card == request.rfid_card).first()
+    if not user:
+        # 自动注册新用户
+        user = User(
+            rfid_card=request.rfid_card,
+            username=f"用户_{request.rfid_card[-4:]}",
+            phone="",
+            balance=Decimal("50.00")
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        logger.info(f"自动注册新用户: RFID={request.rfid_card}, ID={user.id}")
+    
+    # 3. 检查余额
+    if user.balance < Decimal(str(settings.MIN_BALANCE)):
+        return {
+            "success": False,
+            "message": f"余额不足，当前余额: {float(user.balance):.2f} 元，最低需要 {settings.MIN_BALANCE} 元"
+        }
+    
+    # 4. 检查车辆状态
+    if bike.status != BikeStatus.IDLE.value:
+        return {
+            "success": False,
+            "message": f"车辆正在使用中，当前状态: {bike.status}"
+        }
+    
+    # 5. 创建订单
+    order = Order(
+        user_id=user.id,
+        bike_id=bike.id,
+        start_time=datetime.now(),
+        start_lat=request.lat,
+        start_lng=request.lng,
+        status=OrderStatus.ACTIVE.value
+    )
+    db.add(order)
+    
+    # 6. 更新车辆状态
+    bike.status = BikeStatus.RIDING.value
+    bike.current_lat=request.lat
+    bike.current_lng = request.lng
+    
+    db.commit()
+    db.refresh(order)
+    
+    # 7. 发送 MQTT 开锁指令
+    mqtt_client.publish_command(bike.id, "unlock", order.id)
+    
+    logger.info(f"硬件开锁成功: 用户={request.rfid_card}, 车辆={bike.bike_code}, 订单={order.id}")
+    
+    return {
+        "success": True,
+        "message": "开锁成功",
+        "user_id": user.id,
+        "balance": float(user.balance),
+        "order_id": order.id
+    }
+
 
 @app.post("/api/orders/unlock", response_model=OrderResponse, tags=["订单管理"])
 async def unlock_bike(unlock: OrderUnlock, db: Session = Depends(get_db)):
@@ -674,11 +799,67 @@ async def get_dashboard(db: Session = Depends(get_db)):
     )
 
 
+@app.get("/api/admin/statistics/trends", tags=["管理员"])
+async def get_statistics_trends(
+    days: int = 7,
+    db: Session = Depends(get_db)
+):
+    """获取指定天数的统计数据趋势"""
+    trends_data = []
+
+    for i in range(days - 1, -1, -1):
+        date = datetime.now().date() - timedelta(days=i)
+
+        # 当天的订单数
+        order_count = db.query(Order).filter(
+            func.date(Order.created_at) == date
+        ).count()
+
+        # 当天的收入（只统计已完成的订单）
+        revenue = db.query(func.sum(Order.cost)).filter(
+            func.date(Order.created_at) == date,
+            Order.status == OrderStatus.COMPLETED.value
+        ).scalar() or Decimal("0.00")
+
+        trends_data.append({
+            "date": date.strftime("%Y-%m-%d"),
+            "display_date": date.strftime("%m-%d"),
+            "order_count": order_count,
+            "revenue": float(revenue)
+        })
+
+    return {
+        "trends": trends_data
+    }
+
+
+# ========== WebSocket 端点 ==========
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket 端点，用于向前端推送实时数据"""
+    await websocket_manager.connect(websocket)
+
+    try:
+        # 保持连接，接收客户端消息（如果有）
+        while True:
+            data = await websocket.receive_text()
+            # 可以处理客户端发送的消息
+            logger.debug(f"收到 WebSocket 消息: {data}")
+
+    except WebSocketDisconnect:
+        websocket_manager.disconnect(websocket)
+        logger.info("WebSocket 客户端主动断开连接")
+    except Exception as e:
+        websocket_manager.disconnect(websocket)
+        logger.error(f"WebSocket 错误: {e}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=True
+        reload=False  # Windows 上禁用自动重载避免多进程问题
     )

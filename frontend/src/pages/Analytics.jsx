@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import dayjs from 'dayjs';
-import api from '../services/api';
+import api, { adminAPI } from '../services/api';
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
@@ -37,72 +37,44 @@ function Analytics() {
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const params = {
-        start_date: dateRange[0].format('YYYY-MM-DD'),
-        end_date: dateRange[1].format('YYYY-MM-DD'),
-      };
 
-      // 获取统计数据
-      const statsResponse = await api.get('/admin/stats', { params });
+      // 获取仪表盘统计数据
+      const dashboardData = await api.get('/admin/dashboard');
       setStats({
-        totalRevenue: statsResponse.data.total_revenue || 0,
-        totalOrders: statsResponse.data.total_orders || 0,
-        avgDuration: statsResponse.data.avg_duration || 0,
-        activeUsers: statsResponse.data.active_users || 0,
+        totalRevenue: dashboardData.today_revenue || 0,
+        totalOrders: dashboardData.today_orders || 0,
+        avgDuration: 0, // 后端暂未提供
+        activeUsers: dashboardData.total_users || 0,
       });
 
-      // 模拟日期数据（实际应从后端获取）
-      const days = [];
-      const orderCounts = [];
-      const revenues = [];
+      // 获取订单列表（最近10条）
+      const ordersData = await api.get('/orders', { params: { limit: 10 } });
+      setRecentOrders(ordersData.map(order => ({
+        id: order.id,
+        user: order.user_id || '未知',
+        bike_code: `BIKE_${order.bike_id}`,
+        start_time: order.start_time,
+        duration: order.duration_minutes || 0,
+        cost: order.cost || 0,
+        status: order.status,
+      })));
 
-      for (let i = 6; i >= 0; i--) {
-        const date = dayjs().subtract(i, 'day');
-        days.push(date.format('MM-DD'));
-        orderCounts.push(Math.floor(Math.random() * 50) + 20);
-        revenues.push(Math.floor(Math.random() * 500) + 100);
-      }
+      // 车辆状态分布
+      setBikeStatusData([
+        { value: dashboardData.idle_bikes || 0, name: '空闲' },
+        { value: dashboardData.riding_bikes || 0, name: '骑行中' },
+        { value: dashboardData.fault_bikes || 0, name: '故障' },
+      ]);
+
+      // 获取趋势数据（从后端API）
+      const trendsData = await adminAPI.getStatisticsTrends(7);
+      const days = trendsData.trends.map(t => t.display_date);
+      const orderCounts = trendsData.trends.map(t => t.order_count);
+      const revenues = trendsData.trends.map(t => t.revenue);
 
       setOrdersByDay({ days, counts: orderCounts });
       setRevenueByDay({ days, amounts: revenues });
 
-      // 模拟车辆状态数据
-      setBikeStatusData([
-        { value: 70, name: '空闲' },
-        { value: 25, name: '骑行中' },
-        { value: 5, name: '故障' },
-      ]);
-
-      // 模拟最近订单
-      setRecentOrders([
-        {
-          id: 1,
-          user: '测试用户1',
-          bike_code: 'BIKE_001',
-          start_time: '2025-01-11 10:30',
-          duration: 30,
-          cost: 3.0,
-          status: 'completed',
-        },
-        {
-          id: 2,
-          user: '测试用户2',
-          bike_code: 'BIKE_002',
-          start_time: '2025-01-11 11:15',
-          duration: 45,
-          cost: 4.5,
-          status: 'completed',
-        },
-        {
-          id: 3,
-          user: '测试用户1',
-          bike_code: 'BIKE_003',
-          start_time: '2025-01-11 14:20',
-          duration: 0,
-          cost: 0,
-          status: 'active',
-        },
-      ]);
     } catch (error) {
       console.error('获取统计数据失败:', error);
     } finally {

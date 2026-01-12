@@ -78,12 +78,4 @@ CREATE INDEX idx_orders_bike ON orders(bike_id);
 CREATE INDEX idx_trajectories_bike ON bike_trajectories(bike_id);
 CREATE INDEX idx_trajectories_order ON bike_trajectories(order_id);
 
--- 插入测试数据
-INSERT INTO users (rfid_card, username, balance) VALUES
-('A3F5C2D1', '测试用户1', 50.00),
-('B7E9A4F2', '测试用户2', 30.00);
-
-INSERT INTO bikes (bike_code, status, current_lat, current_lng) VALUES
-('BIKE_001', 'idle', 39.915, 116.404),
-('BIKE_002', 'idle', 39.916, 116.405),
-('BIKE_003', 'riding', 39.917, 116.406);
+-- 注意：不包含任何测试数据，数据库将空表启动

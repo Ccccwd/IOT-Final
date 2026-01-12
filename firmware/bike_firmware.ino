@@ -46,7 +46,7 @@ const char *TOPIC_GPS = "bike/001/gps";             // GPS 上报
 const char *TOPIC_COMMAND = "server/001/command";   // 服务器指令
 
 // 后端 API 配置
-const char *API_SERVER = "26.210.196.161"; // 后端服务器 IP（请修改）
+const char *API_SERVER = "192.168.43.66"; // 后端服务器 IP（请修改）
 const int API_PORT = 8000;                 // API 端口
 
 // 引脚定义
@@ -185,6 +185,10 @@ String formatFloat(float value, int decimals);
 void setup()
 {
   // *** 关键修复：按 SPI/I2C 冲突文章建议，先配置所有片选引脚 ***
+
+  // 0. 蜂鸣器引脚 - 最先设置为低电平，防止上电时鸣响
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
 
   // 1. OLED CS (GPIO0) - 必须先拉高，否则进入烧录模式
   pinMode(OLED_CS, OUTPUT);
@@ -338,9 +342,7 @@ void setupOLED()
  */
 void setupBuzzer()
 {
-  pinMode(BUZZER_PIN, OUTPUT);
-  // 初始化为低电平，不响
-  digitalWrite(BUZZER_PIN, LOW);
+  // 蜂鸣器已在setup()开始时初始化为低电平
   Serial.println(F("✓ 蜂鸣器已就绪"));
 }
 
@@ -695,29 +697,45 @@ void handleLockRequest(String cardUID)
 void sendAuthRequest(String action, String cardUID)
 {
   Serial.println(F(" 发送 HTTP 请求..."));
+  Serial.print(F("   目标服务器: "));
+  Serial.print(API_SERVER);
+  Serial.print(F(":"));
+  Serial.println(API_PORT);
 
   // 连接后端服务器
   WiFiClient client;
+  Serial.println(F("   正在连接..."));
   if (!client.connect(API_SERVER, API_PORT))
   {
-    Serial.println(F(" 无法连接到后端服务器"));
+    Serial.println(F(" ❌ 无法连接到后端服务器"));
+    Serial.println(F("   可能原因:"));
+    Serial.println(F("   1. 后端服务器未启动"));
+    Serial.println(F("   2. IP地址不正确"));
+    Serial.println(F("   3. 防火墙阻止连接"));
     displayMessage = "连接失败";
-    displaySubMessage = "请检查网络";
+    displaySubMessage = "后端未启动";
     currentState = STATE_IDLE;
+    playBeep(3, 50);  // 错误提示音
+    delay(3000);  // 显示3秒错误信息
+    displayMessage = "待机中";
+    displaySubMessage = "请刷卡解锁";
     return;
   }
+  
+  Serial.println(F("   ✓ 连接成功！"));
 
   // 构造 JSON 请求体
   StaticJsonDocument<256> doc;
   doc["rfid_card"] = cardUID;
   doc["lat"] = currentLat;
   doc["lng"] = currentLng;
+  doc["bike_code"] = "001";  // 添加车辆编号
 
   String postData;
   serializeJson(doc, postData);
 
-  // 发送 HTTP POST 请求
-  client.print(String("POST /api/orders/unlock HTTP/1.1\r\n") +
+  // 发送 HTTP POST 请求（使用硬件端专用接口）
+  client.print(String("POST /api/hardware/unlock HTTP/1.1\r\n") +
                String("Host: ") + API_SERVER + "\r\n" +
                String("Content-Type: application/json\r\n") +
                String("Content-Length: ") + postData.length() + "\r\n\r\n" +
@@ -758,23 +776,39 @@ bool processServerResponse(WiFiClient &client)
     }
   }
 
-  // 跳过 HTTP 头
-  bool blankLine = false;
+  // 读取并跳过 HTTP 状态行
+  String statusLine = client.readStringUntil('\n');
+  Serial.print(F(" HTTP 状态: "));
+  Serial.println(statusLine);
+
+  // 跳过 HTTP 头部，直到遇到空行
   while (client.available())
   {
-    String line = client.readStringUntil('\r');
-    if (line == "\n")
+    String line = client.readStringUntil('\n');
+    line.trim();  // 去除前后空白字符
+    if (line.length() == 0)
     {
-      if (blankLine)
-        break;
-      blankLine = true;
+      // 空行表示头部结束
+      break;
     }
   }
 
   // 读取响应体
-  String responseBody = client.readString();
+  String responseBody = "";
+  while (client.available())
+  {
+    responseBody += client.readString();
+  }
+  
   Serial.println(F(" 收到响应:"));
   Serial.println(responseBody);
+
+  // 检查响应体是否为空
+  if (responseBody.length() == 0)
+  {
+    Serial.println(F(" 错误: 响应体为空"));
+    return false;
+  }
 
   // 解析 JSON
   StaticJsonDocument<512> doc;
@@ -917,31 +951,51 @@ void updateOLEDIdle()
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // 标题
-  drawCenteredText("Smart Bike System", 15, 2);
+  // 标题 - 行 0
+  display.setCursor(0, 0);
+  display.setTextSize(1);
+  display.println("=== Smart Bike ===");
 
-  // WiFi 状态
-  display.setCursor(0, 35);
+  // 分隔线
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+
+  // WiFi 状态 - 行 13
+  display.setCursor(0, 13);
   display.setTextSize(1);
   display.print("WiFi: ");
-  display.println(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
+  if (WiFi.status() == WL_CONNECTED) {
+    display.println("OK");
+  } else {
+    display.println("X");
+  }
 
-  // GPS 状态（模拟坐标）
-  display.setCursor(0, 48);
+  // GPS 状态 - 行 23
+  display.setCursor(0, 23);
   display.print("GPS: ");
   if (gpsValid)
   {
-    display.print(currentLat, 4);
-    display.print(",");
-    display.print(currentLng, 4);
+    display.println("OK(Sim)");
   }
   else
   {
-    display.println("Simulated");
+    display.println("X");
   }
 
-  // 提示信息
-  drawCenteredText(displayMessage.c_str(), 60, 1);
+  // 坐标信息 - 行 30-40
+  display.setCursor(0, 30);
+  display.print("Lat:");
+  display.print(currentLat, 4);
+  display.setCursor(0, 40);
+  display.print("Lng:");
+  display.print(currentLng, 4);
+
+  // 分隔线
+  display.drawLine(0, 50, 127, 50, SSD1306_WHITE);
+
+  // 提示信息 - 行 54 (距离底部10像素，安全范围)
+  display.setCursor(0, 54);
+  display.setTextSize(1);
+  display.print(displayMessage.c_str());
 }
 
 /**
@@ -955,29 +1009,42 @@ void updateOLEDRiding()
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // 标题
-  drawCenteredText("RIDING", 15, 2);
+  // 标题 - 行 0
+  display.setCursor(0, 0);
+  display.setTextSize(2);
+  display.println(" RIDING");
 
-  // 骑行时长
+  // 分隔线
+  display.drawLine(0, 18, 127, 18, SSD1306_WHITE);
+
+  // 骑行时长 - 行 22
   unsigned long rideDuration = (millis() - rideStartTime) / 1000 / 60; // 分钟
-  display.setCursor(10, 35);
+  display.setCursor(0, 22);
   display.setTextSize(1);
   display.print("Time: ");
   display.print(rideDuration);
   display.println(" min");
 
-  // 预计费用
+  // 预计费用 - 行 32
   float cost = rideDuration * PRICE_PER_MINUTE;
-  display.setCursor(10, 50);
+  display.setCursor(0, 32);
   display.print("Cost: ");
-  display.print(cost, 1);
-  display.println(" yuan");
+  display.print(cost, 2);
+  display.println(" RMB");
 
-  // 余额
-  display.setCursor(10, 65);
+  // 余额 - 行 40
+  display.setCursor(0, 40);
   display.print("Balance: ");
-  display.print(currentBalance, 1);
-  display.println(" yuan");
+  display.print(currentBalance, 2);
+  display.print(" RMB");
+
+  // 分隔线
+  display.drawLine(0, 50, 127, 50, SSD1306_WHITE);
+
+  // 提示信息 - 行 54 (距离底部10像素，安全范围)
+  display.setCursor(0, 54);
+  display.setTextSize(1);
+  display.print(displaySubMessage.c_str());
 }
 
 /**
@@ -991,13 +1058,35 @@ void updateOLEDProcessing()
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  drawCenteredText(displayMessage.c_str(), 30, 2);
-  drawCenteredText(displaySubMessage.c_str(), 50, 1);
+  // 主消息 - 行 10 (居中，大字体)
+  display.setTextSize(2);
+  int16_t x, y1;
+  uint16_t w, h;
+  display.getTextBounds((char*)displayMessage.c_str(), 0, 0, &x, &y1, &w, &h);
+  display.setCursor((SCREEN_WIDTH - w) / 2, 10);
+  display.println(displayMessage.c_str());
 
-  // 加载动画
+  // 副消息 - 行 30 (居中，小字体)
+  display.setTextSize(1);
+  display.getTextBounds((char*)displaySubMessage.c_str(), 0, 0, &x, &y1, &w, &h);
+  display.setCursor((SCREEN_WIDTH - w) / 2, 30);
+  display.println(displaySubMessage.c_str());
+
+  // 加载动画进度条 - 行 45
   static int progress = 0;
   progress = (progress + 10) % 100;
-  drawProgressBar(progress);
+  
+  int barWidth = 100;
+  int barHeight = 8;
+  int barX = (SCREEN_WIDTH - barWidth) / 2;
+  int barY = 45;
+
+  // 边框
+  display.drawRect(barX, barY, barWidth, barHeight, SSD1306_WHITE);
+
+  // 填充
+  int fillWidth = (barWidth - 2) * progress / 100;
+  display.fillRect(barX + 1, barY + 1, fillWidth, barHeight - 2, SSD1306_WHITE);
 }
 
 /**

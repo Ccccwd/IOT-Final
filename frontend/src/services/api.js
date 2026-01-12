@@ -54,6 +54,9 @@ export const userAPI = {
 
   // 获取用户详情
   getUser: (userId) => api.get(`/users/${userId}`),
+
+  // 更新用户信息
+  updateUser: (userId, data) => api.put(`/users/${userId}`, data),
 };
 
 // ========== 车辆相关 API ==========
@@ -103,6 +106,9 @@ export const adminAPI = {
 
   // 获取仪表盘统计数据
   getDashboard: () => api.get('/admin/dashboard'),
+
+  // 获取统计数据趋势
+  getStatisticsTrends: (days = 7) => api.get('/admin/statistics/trends', { params: { days } }),
 };
 
 // ========== 健康检查 ==========

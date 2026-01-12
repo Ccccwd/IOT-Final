@@ -30,7 +30,11 @@
       "Bash(taskkill:*)",
       "Bash(cmd.exe /c \"taskkill /PID 25396 /F\")",
       "Bash(cmd.exe:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(mysql:*)",
+      "Bash(docker ps:*)",
+      "Bash(timeout:*)",
+      "Bash(mosquitto:*)"
     ],
     "deny": [],
     "ask": []

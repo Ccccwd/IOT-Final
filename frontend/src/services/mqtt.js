@@ -1,9 +1,10 @@
 import mqtt from 'mqtt';
 
 // MQTT 配置
+// 尝试使用 EMQX 的另一个路径配置
 const MQTT_BROKER = 'broker.emqx.io';
-const MQTT_PORT = 8084; // WebSocket Secure 端口
-const MQTT_URL = `wss://${MQTT_BROKER}:${MQTT_PORT}/mqtt`;
+const MQTT_PORT = 8083;
+const MQTT_PATH = '/mqtt';
 
 class MQTTService {
   constructor() {
@@ -16,14 +17,29 @@ class MQTTService {
 
   connect() {
     return new Promise((resolve, reject) => {
-      // 生成随机客户端 ID
-      const clientId = `web_client_${Math.random().toString(16).substr(2, 8)}`;
+      // 尝试多种连接方式
+      const mqttUrl = `ws://${MQTT_BROKER}:${MQTT_PORT}${MQTT_PATH}`;
 
-      this.client = mqtt.connect(MQTT_URL, {
-        clientId,
+      console.log('正在连接 MQTT...');
+      console.log('Broker:', MQTT_BROKER);
+      console.log('端口:', MQTT_PORT);
+      console.log('路径:', MQTT_PATH);
+      console.log('完整 URL:', mqttUrl);
+
+      this.client = mqtt.connect(mqttUrl, {
+        clientId: `web_client_${Math.random().toString(16).substr(2, 8)}`,
         clean: true,
-        connectTimeout: 10000,
-        reconnectPeriod: 10000,
+        connectTimeout: 30 * 1000,
+        reconnectPeriod: 5 * 1000,
+        keepalive: 60,
+        protocolId: 'MQTT',
+        protocolVersion: 4,
+        // 添加 WebSocket 特定选项
+        wsOptions: {
+          headers: {
+            'Origin': 'http://localhost:5173'
+          }
+        }
       });
 
       // 连接成功
@@ -41,6 +57,8 @@ class MQTTService {
       // 连接错误
       this.client.on('error', (err) => {
         console.error('MQTT 连接错误:', err);
+        console.error('Broker:', MQTT_BROKER);
+        console.error('端口:', MQTT_PORT);
         this.connected = false;
         reject(err);
       });

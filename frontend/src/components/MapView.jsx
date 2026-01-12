@@ -10,17 +10,20 @@ import { loadBaiduMapScript, isBaiduMapLoaded } from '../utils/loadBaiduMap';
 import { wgs84ToBd09, isValidCoord } from '../utils/mapUtils';
 import './MapView.css';
 
-function MapView({ bikes, loading }) {
+function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSelect }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef({});
   const infoWindowRef = useRef(null);
-  const [selectedBike, setSelectedBike] = useState(null);
+  const [internalSelectedBike, setInternalSelectedBike] = useState(null);
   const [mapLoading, setMapLoading] = useState(false); // 改为 false，避免死锁
   const [mapError, setMapError] = useState(null);
   const [containerReady, setContainerReady] = useState(false);
   const [initTriggered, setInitTriggered] = useState(false); // 防止重复初始化
   const [isInitializing, setIsInitializing] = useState(false); // 初始化进行中标记
+
+  // 使用外部传入的 selectedBike，如果没有则使用内部状态
+  const selectedBike = externalSelectedBike !== undefined ? externalSelectedBike : internalSelectedBike;
 
   console.log('[MapView] 组件渲染开始, bikes.length:', bikes.length, 'loading:', loading, 'mapLoading:', mapLoading);
 
@@ -115,6 +118,7 @@ function MapView({ bikes, loading }) {
   // 添加或更新 Marker
   const updateMarkers = useCallback(() => {
     if (!mapRef.current || !window.BMap) {
+      console.log('[MapView] updateMarkers: 地图或BMap未准备好');
       return;
     }
 
@@ -126,9 +130,12 @@ function MapView({ bikes, loading }) {
     });
     markersRef.current = {};
 
+    console.log('[MapView] updateMarkers: 开始添加标记，车辆总数:', bikes.length);
+
     // 添加新的 Marker
     bikes.forEach((bike) => {
       if (!isValidCoord(bike.current_lat, bike.current_lng)) {
+        console.log('[MapView] 跳过无效坐标的车辆:', bike.bike_code, '坐标:', bike.current_lat, bike.current_lng);
         return;
       }
 
@@ -139,6 +146,8 @@ function MapView({ bikes, loading }) {
       );
 
       const point = new window.BMap.Point(bd09Coord.lng, bd09Coord.lat);
+
+      console.log('[MapView] 添加车辆标记:', bike.bike_code, 'BD09坐标:', bd09Coord);
 
       // 创建自定义图标
       const iconColor = getBikeIconColor(bike.status);
@@ -161,7 +170,12 @@ function MapView({ bikes, loading }) {
 
       // 添加点击事件
       marker.addEventListener('click', () => {
-        setSelectedBike(bike);
+        console.log('[MapView] Marker点击:', bike.bike_code);
+        if (onBikeSelect) {
+          onBikeSelect(bike);
+        } else {
+          setInternalSelectedBike(bike);
+        }
         showInfoWindow(bike, point);
       });
 
@@ -169,7 +183,9 @@ function MapView({ bikes, loading }) {
       map.addOverlay(marker);
       markersRef.current[bike.id] = marker;
     });
-  }, [bikes]);
+
+    console.log('[MapView] updateMarkers: 完成，已添加', Object.keys(markersRef.current).length, '个标记');
+  }, [bikes, onBikeSelect]);
 
   // 显示 InfoWindow
   const showInfoWindow = (bike, point) => {
@@ -258,6 +274,49 @@ function MapView({ bikes, loading }) {
       updateMarkers();
     }
   }, [bikes, isInitializing, updateMarkers]);
+
+  // 监听选中车辆变化，跳转到对应位置
+  useEffect(() => {
+    if (!selectedBike || !mapRef.current || !window.BMap) {
+      return;
+    }
+
+    console.log('[MapView] 选中车辆变化:', selectedBike.bike_code);
+
+    // 检查坐标是否有效
+    if (!isValidCoord(selectedBike.current_lat, selectedBike.current_lng)) {
+      console.warn('[MapView] 选中车辆的坐标无效:', selectedBike.current_lat, selectedBike.current_lng);
+      return;
+    }
+
+    // 坐标转换
+    const bd09Coord = wgs84ToBd09(
+      parseFloat(selectedBike.current_lat),
+      parseFloat(selectedBike.current_lng)
+    );
+
+    const point = new window.BMap.Point(bd09Coord.lng, bd09Coord.lat);
+
+    // 移动地图中心并缩放
+    mapRef.current.centerAndZoom(point, 16);
+
+    console.log('[MapView] 地图已跳转到车辆位置:', selectedBike.bike_code, bd09Coord);
+
+    // 打开信息窗口
+    showInfoWindow(selectedBike, point);
+
+    // 高亮对应的 marker
+    const marker = markersRef.current[selectedBike.id];
+    if (marker) {
+      console.log('[MapView] 高亮标记:', selectedBike.bike_code);
+      // 可以在这里添加动画效果
+      marker.setAnimation(window.BMap_ANIMATION_BOUNCE);
+      // 2秒后停止动画
+      setTimeout(() => {
+        marker.setAnimation(null);
+      }, 2000);
+    }
+  }, [selectedBike]);
 
   // 监听容器准备好后初始化地图（只执行一次）
   useEffect(() => {

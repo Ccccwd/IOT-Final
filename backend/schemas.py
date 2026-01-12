@@ -118,6 +118,14 @@ class OrderUnlock(OrderBase):
     lng: float = Field(..., ge=-180, le=180, description="经度")
 
 
+class HardwareUnlockRequest(BaseModel):
+    """硬件端开锁请求（不需要 bike_id，后端自动匹配）"""
+    rfid_card: str = Field(..., min_length=1, max_length=20, description="RFID 卡号")
+    lat: float = Field(..., ge=-90, le=90, description="纬度")
+    lng: float = Field(..., ge=-180, le=180, description="经度")
+    bike_code: Optional[str] = Field("001", description="车辆编号，默认 001")
+
+
 class OrderLock(BaseModel):
     """还车（结束订单）"""
     order_id: int
