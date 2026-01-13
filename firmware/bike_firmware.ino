@@ -63,8 +63,8 @@ const int API_PORT = 8000;                // API 端口
 #define GPS_BAUD 9600 // GPS 波特率
 
 // 蜂鸣器/LED引脚
-#define BUZZER_PIN 4   // D2 - GPIO4
-#define LED_PIN 16     // D0 - GPIO16（骑行状态指示灯）
+#define BUZZER_PIN 4 // D2 - GPIO4
+#define LED_PIN 16   // D0 - GPIO16（骑行状态指示灯）
 // 注意：GPIO12 (MISO) 用于 RC522
 
 // OLED 引脚（软件SPI，与RC522共用硬件SPI引脚）
@@ -128,22 +128,22 @@ int currentOrderID = 0;          // 当前订单 ID
 // 目标百度坐标: 30.313506, 120.395996 (杭州钱塘区)
 // 反向计算得到的WGS84坐标
 float currentLat = 30.307645;  // 当前纬度
-float currentLng = 120.389866;  // 当前经度
+float currentLng = 120.389866; // 当前经度
 float startLat = 30.307645;    // 起始位置纬度（从 GPS 读取）
-float startLng = 120.389866;    // 起始位置经度（从 GPS 读取）
-bool gpsValid = true;   // GPS 定位是否有效（设为true以便测试）
+float startLng = 120.389866;   // 起始位置经度（从 GPS 读取）
+bool gpsValid = true;          // GPS 定位是否有效（设为true以便测试）
 
 // GPS 统计数据
-unsigned long gpsCharsProcessed = 0;  // 已处理的 GPS 字符数
+unsigned long gpsCharsProcessed = 0; // 已处理的 GPS 字符数
 int gpsSatellites = 0;               // GPS 卫星数量
 double gpsAltitude = 0.0;            // 海拔高度（米）
 double gpsSpeed = 0.0;               // 速度（km/h）
 
 // 模拟移动参数（骑行时使用）
-const float MOVE_STEP = 0.0001;       // 每次移动的步长（约11米）
+const float MOVE_STEP = 0.0001; // 每次移动的步长（约11米）
 unsigned long lastMoveTime = 0;
 const unsigned long MOVE_INTERVAL = 3000; // 每3秒移动一次
-bool useSimulation = false;          // 是否启用模拟移动模式
+bool useSimulation = false;               // 是否启用模拟移动模式
 
 // 计时器
 unsigned long lastHeartbeatTime = 0;
@@ -745,18 +745,17 @@ void sendAuthRequest(String action, String cardUID)
     displaySubMessage = "后端未启动";
     currentState = STATE_IDLE;
     controlLED(false); // 熄灭LED（空闲）
-    playBeep(3, 100); // 错误提示音
-    delay(3000);     // 显示3秒错误信息
+    playBeep(3, 100);  // 错误提示音
+    delay(3000);       // 显示3秒错误信息
     displayMessage = "待机中";
     displaySubMessage = "请刷卡解锁";
     return;
   }
 
-
   // 构造 JSON 请求体（使用6位小数精度，约0.1米）
   StaticJsonDocument<256> doc;
   doc["rfid_card"] = cardUID;
-  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lat"] = String(currentLat, 6); // 6位小数 = ~0.1米精度
   doc["lng"] = String(currentLng, 6);
   doc["bike_code"] = "BIKE_001"; // 添加车辆编号
 
@@ -769,7 +768,6 @@ void sendAuthRequest(String action, String cardUID)
                String("Content-Type: application/json\r\n") +
                String("Content-Length: ") + postData.length() + "\r\n\r\n" +
                postData);
-
 
   // 处理响应
   bool success = processServerResponse(client);
@@ -814,9 +812,9 @@ void sendLockRequest(String cardUID)
     displayMessage = "连接失败";
     displaySubMessage = "后端未启动";
     currentState = STATE_RIDING; // 返回骑行状态
-    controlLED(true); // 点亮LED（骑行中）
-    playBeep(3, 100); // 错误提示音
-    delay(3000);     // 显示3秒错误信息
+    controlLED(true);            // 点亮LED（骑行中）
+    playBeep(3, 100);            // 错误提示音
+    delay(3000);                 // 显示3秒错误信息
     displayMessage = "骑行中";
     displaySubMessage = "再次刷卡还车";
     return;
@@ -826,7 +824,7 @@ void sendLockRequest(String cardUID)
   StaticJsonDocument<256> doc;
   doc["order_id"] = currentOrderID;
   doc["rfid_card"] = cardUID;
-  doc["end_lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["end_lat"] = String(currentLat, 6); // 6位小数 = ~0.1米精度
   doc["end_lng"] = String(currentLng, 6);
 
   String postData;
@@ -850,7 +848,7 @@ void sendLockRequest(String cardUID)
     playBeep(3, 50);
     delay(2000);
     currentState = STATE_RIDING; // 返回骑行状态
-    controlLED(true); // 点亮LED（骑行中）
+    controlLED(true);            // 点亮LED（骑行中）
     displayMessage = "骑行中";
     displaySubMessage = "再次刷卡还车";
   }
@@ -914,7 +912,6 @@ bool processLockResponse(WiFiClient &client)
     }
   }
 
-
   // 检查响应体是否为空
   if (responseBody.length() == 0)
   {
@@ -970,7 +967,6 @@ bool processLockResponse(WiFiClient &client)
   float cost = doc["cost"];
   float newBalance = doc["new_balance"];
   int duration = doc["duration_minutes"];
-
 
   // 显示结算信息
   char buffer[64];
@@ -1057,7 +1053,6 @@ bool processServerResponse(WiFiClient &client)
     responseBody += c;
   }
 
-
   // 检查响应体是否为空
   if (responseBody.length() == 0)
   {
@@ -1096,7 +1091,6 @@ bool processServerResponse(WiFiClient &client)
   currentBalance = doc["balance"];
   currentOrderID = doc["order_id"];
 
-
   // 更新状态
   currentState = STATE_RIDING;
   rideStartTime = millis();
@@ -1124,7 +1118,7 @@ void sendHeartbeat()
 {
   StaticJsonDocument<256> doc;
   doc["timestamp"] = millis();
-  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lat"] = String(currentLat, 6); // 6位小数 = ~0.1米精度
   doc["lng"] = String(currentLng, 6);
   doc["battery"] = 100; // TODO: 读取实际电池电量
   doc["status"] = (currentState == STATE_RIDING) ? "riding" : "idle";
@@ -1146,7 +1140,7 @@ void sendHeartbeat()
 void sendGPSReport()
 {
   StaticJsonDocument<256> doc;
-  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lat"] = String(currentLat, 6); // 6位小数 = ~0.1米精度
   doc["lng"] = String(currentLng, 6);
   doc["mode"] = useSimulation ? "hybrid" : "real"; // hybrid=真实起始+模拟移动, real=完全真实
   doc["timestamp"] = millis();
@@ -1272,7 +1266,7 @@ void updateOLEDRiding()
 
   // 骑行时长 - 行 23
   unsigned long rideDuration = (millis() - rideStartTime) / 1000 / 60; // 分钟
-  unsigned long rideSeconds = (millis() - rideStartTime) / 1000 % 60; // 秒
+  unsigned long rideSeconds = (millis() - rideStartTime) / 1000 % 60;  // 秒
   display.setTextSize(1);
   display.setCursor(0, 23);
   display.print("Time: ");

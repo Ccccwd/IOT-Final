@@ -207,7 +207,7 @@ function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSel
         .filter(bike => bike.status === 'riding')
         .map(bike => bike.id.toString())
     );
-    
+
     Object.keys(polylinesRef.current).forEach((bikeId) => {
       if (!ridingBikeIds.has(bikeId.toString())) {
         map.removeOverlay(polylinesRef.current[bikeId]);

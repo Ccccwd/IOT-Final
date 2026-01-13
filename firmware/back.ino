@@ -67,8 +67,8 @@ const int API_PORT = 8000;                // API 端口
 #define GPS_TX_PIN -1 // 不使用（GPS 不需要接收 ESP 的命令）
 
 // 蜂鸣器/LED引脚
-#define BUZZER_PIN 4   // D2 - GPIO4
-#define LED_PIN 16     // D0 - GPIO16（骑行状态指示灯）
+#define BUZZER_PIN 4 // D2 - GPIO4
+#define LED_PIN 16   // D0 - GPIO16（骑行状态指示灯）
 // 注意：GPIO12 (MISO) 用于 RC522
 
 // OLED 引脚（软件SPI，与RC522共用硬件SPI引脚）
@@ -134,10 +134,10 @@ int currentOrderID = 0;          // 当前订单 ID
 // 反向计算得到的WGS84坐标（已向西移动0.02度）: 30.302155, 120.363254
 // 转换链: WGS84(30.302155, 120.363254) → GCJ02 → BD09
 float currentLat = 30.302155;  // 当前纬度 (WGS84)
-float currentLng = 120.363254;  // 当前经度 (WGS84, 向西偏移0.02度)
+float currentLng = 120.363254; // 当前经度 (WGS84, 向西偏移0.02度)
 float startLat = 30.302155;    // 起始位置纬度
-float startLng = 120.363254;    // 起始位置经度
-bool gpsValid = true;   // GPS 定位是否有效（设为true以便测试）
+float startLng = 120.363254;   // 起始位置经度
+bool gpsValid = true;          // GPS 定位是否有效（设为true以便测试）
 
 // 模拟移动参数
 const float MOVE_STEP = 0.0001; // 每次移动的步长（约11米）
@@ -789,8 +789,8 @@ void sendAuthRequest(String action, String cardUID)
     displaySubMessage = "后端未启动";
     currentState = STATE_IDLE;
     controlLED(false); // 熄灭LED（空闲）
-    playBeep(3, 100); // 错误提示音
-    delay(3000);     // 显示3秒错误信息
+    playBeep(3, 100);  // 错误提示音
+    delay(3000);       // 显示3秒错误信息
     displayMessage = "待机中";
     displaySubMessage = "请刷卡解锁";
     return;
@@ -801,7 +801,7 @@ void sendAuthRequest(String action, String cardUID)
   // 构造 JSON 请求体（使用6位小数精度，约0.1米）
   StaticJsonDocument<256> doc;
   doc["rfid_card"] = cardUID;
-  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lat"] = String(currentLat, 6); // 6位小数 = ~0.1米精度
   doc["lng"] = String(currentLng, 6);
   doc["bike_code"] = "BIKE_001"; // 添加车辆编号
 
@@ -870,9 +870,9 @@ void sendLockRequest(String cardUID)
     displayMessage = "连接失败";
     displaySubMessage = "后端未启动";
     currentState = STATE_RIDING; // 返回骑行状态
-    controlLED(true); // 点亮LED（骑行中）
-    playBeep(3, 100); // 错误提示音
-    delay(3000);     // 显示3秒错误信息
+    controlLED(true);            // 点亮LED（骑行中）
+    playBeep(3, 100);            // 错误提示音
+    delay(3000);                 // 显示3秒错误信息
     displayMessage = "骑行中";
     displaySubMessage = "再次刷卡还车";
     return;
@@ -884,7 +884,7 @@ void sendLockRequest(String cardUID)
   StaticJsonDocument<256> doc;
   doc["order_id"] = currentOrderID;
   doc["rfid_card"] = cardUID;
-  doc["end_lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["end_lat"] = String(currentLat, 6); // 6位小数 = ~0.1米精度
   doc["end_lng"] = String(currentLng, 6);
 
   String postData;
@@ -917,7 +917,7 @@ void sendLockRequest(String cardUID)
     playBeep(3, 50);
     delay(2000);
     currentState = STATE_RIDING; // 返回骑行状态
-    controlLED(true); // 点亮LED（骑行中）
+    controlLED(true);            // 点亮LED（骑行中）
     displayMessage = "骑行中";
     displaySubMessage = "再次刷卡还车";
   }
@@ -1228,7 +1228,7 @@ void sendHeartbeat()
 {
   StaticJsonDocument<256> doc;
   doc["timestamp"] = millis();
-  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lat"] = String(currentLat, 6); // 6位小数 = ~0.1米精度
   doc["lng"] = String(currentLng, 6);
   doc["battery"] = 100; // TODO: 读取实际电池电量
   doc["status"] = (currentState == STATE_RIDING) ? "riding" : "idle";
@@ -1252,7 +1252,7 @@ void sendHeartbeat()
 void sendGPSReport()
 {
   StaticJsonDocument<256> doc;
-  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lat"] = String(currentLat, 6); // 6位小数 = ~0.1米精度
   doc["lng"] = String(currentLng, 6);
   doc["mode"] = "simulation"; // simulation（模拟）或 real（真实GPS）
   doc["timestamp"] = millis();
@@ -1352,12 +1352,12 @@ void updateOLEDIdle()
   // 坐标信息 - 行 32
   display.setCursor(0, 32);
   display.print("Lat:");
-  display.println(currentLat, 6);  // 显示6位小数
+  display.println(currentLat, 6); // 显示6位小数
 
   // 坐标信息 - 行 42
   display.setCursor(0, 42);
   display.print("Lng:");
-  display.println(currentLng, 6);  // 显示6位小数
+  display.println(currentLng, 6); // 显示6位小数
 }
 
 /**
@@ -1381,7 +1381,7 @@ void updateOLEDRiding()
 
   // 骑行时长 - 行 23
   unsigned long rideDuration = (millis() - rideStartTime) / 1000 / 60; // 分钟
-  unsigned long rideSeconds = (millis() - rideStartTime) / 1000 % 60; // 秒
+  unsigned long rideSeconds = (millis() - rideStartTime) / 1000 % 60;  // 秒
   display.setTextSize(1);
   display.setCursor(0, 23);
   display.print("Time: ");

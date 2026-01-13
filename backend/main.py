@@ -517,7 +517,9 @@ async def unlock_bike(unlock: OrderUnlock, db: Session = Depends(get_db)):
 @app.post("/api/orders/lock", response_model=LockResponse, tags=["订单管理"])
 async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
     """还车（结束订单）"""
-    logger.info(f"收到还车请求: order_id={lock.order_id}, rfid_card={lock.rfid_card}, lat={lock.end_lat}, lng={lock.end_lng}")
+    logger.info(
+        f"收到还车请求: order_id={lock.order_id}, rfid_card={lock.rfid_card}, lat={lock.end_lat}, lng={lock.end_lng}"
+    )
 
     # 查找订单
     order = db.query(Order).filter(Order.id == lock.order_id).first()
@@ -534,7 +536,9 @@ async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
 
     # 检查订单状态
     if order.status != OrderStatus.ACTIVE.value:
-        logger.error(f"订单状态错误: order_id={lock.order_id}, 当前状态={order.status}, 期望状态=active")
+        logger.error(
+            f"订单状态错误: order_id={lock.order_id}, 当前状态={order.status}, 期望状态=active"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"订单状态错误，当前状态: {order.status}",
@@ -747,7 +751,12 @@ async def admin_command(command: AdminCommand, db: Session = Depends(get_db)):
 
     # 从 bike_code 中提取数字部分（例如 "BIKE_001" -> "001"）
     import re
-    bike_code_numeric = re.search(r'\d+', bike.bike_code).group() if re.search(r'\d+', bike.bike_code) else bike.bike_code
+
+    bike_code_numeric = (
+        re.search(r"\d+", bike.bike_code).group()
+        if re.search(r"\d+", bike.bike_code)
+        else bike.bike_code
+    )
 
     # 发送控制指令
     mqtt_client.publish_command(bike.id, command.command, None, bike_code_numeric)
