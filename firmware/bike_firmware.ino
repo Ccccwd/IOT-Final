@@ -9,10 +9,6 @@
  * - 蜂鸣器和 LED 反馈
  *
  * 硬件：ESP8266 NodeMCU + RC522 + ATGM336H + SSD1306 + 蜂鸣器
- *
- * 作者：Claude
- * 日期：2025-01-11
- * 版本：v1.1
  */
 
 // =========================== 库引入 ===========================
@@ -95,7 +91,7 @@ const unsigned long MQTT_RETRY_INTERVAL = 5000;     // MQTT 重连间隔 5 秒
 const unsigned long DISPLAY_UPDATE_INTERVAL = 1000; // OLED 刷新间隔 1 秒
 
 // 费用配置
-const float PRICE_PER_MINUTE = 0.1; // 每分钟 0.1 元
+const float PRICE_PER_MINUTE = 0.6; // 每分钟 0.6 元 (0.01元/秒，方便查看实时计费效果)
 const float MIN_BALANCE = 1.0;      // 最低余额 1 元
 
 // =========================== 全局变量 ===========================
@@ -129,11 +125,13 @@ unsigned long rideStartTime = 0; // 骑行开始时间
 int currentOrderID = 0;          // 当前订单 ID
 
 // GPS 数据（混合模式：真实起始坐标 + 模拟移动）
-float currentLat = 0.0;  // 当前纬度
-float currentLng = 0.0;  // 当前经度
-float startLat = 0.0;    // 起始位置纬度（从 GPS 读取）
-float startLng = 0.0;    // 起始位置经度（从 GPS 读取）
-bool gpsValid = false;   // GPS 定位是否有效
+// 目标百度坐标: 30.313506, 120.395996 (杭州钱塘区)
+// 反向计算得到的WGS84坐标
+float currentLat = 30.307645;  // 当前纬度
+float currentLng = 120.389866;  // 当前经度
+float startLat = 30.307645;    // 起始位置纬度（从 GPS 读取）
+float startLng = 120.389866;    // 起始位置经度（从 GPS 读取）
+bool gpsValid = true;   // GPS 定位是否有效（设为true以便测试）
 
 // GPS 统计数据
 unsigned long gpsCharsProcessed = 0;  // 已处理的 GPS 字符数
@@ -536,6 +534,12 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     // 显示信息
     displayMessage = "远程开锁";
     displaySubMessage = "管理员操作";
+
+    // 立即发送心跳包，通知前端状态已更新
+    if (mqttClient.connected())
+    {
+      sendHeartbeat();
+    }
   }
   else if (strcmp(action, "force_lock") == 0)
   {
@@ -558,6 +562,12 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     displayMessage = "待机中";
     displaySubMessage = "请刷卡解锁";
     controlLED(false); // 熄灭LED（空闲）
+
+    // 立即发送心跳包，通知前端状态已更新
+    if (mqttClient.connected())
+    {
+      sendHeartbeat();
+    }
   }
 }
 
@@ -743,11 +753,11 @@ void sendAuthRequest(String action, String cardUID)
   }
 
 
-  // 构造 JSON 请求体
+  // 构造 JSON 请求体（使用6位小数精度，约0.1米）
   StaticJsonDocument<256> doc;
   doc["rfid_card"] = cardUID;
-  doc["lat"] = currentLat;
-  doc["lng"] = currentLng;
+  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lng"] = String(currentLng, 6);
   doc["bike_code"] = "BIKE_001"; // 添加车辆编号
 
   String postData;
@@ -797,7 +807,6 @@ void sendLockRequest(String cardUID)
     return;
   }
 
-
   // 连接后端服务器
   WiFiClient client;
   if (!client.connect(API_SERVER, API_PORT))
@@ -813,18 +822,15 @@ void sendLockRequest(String cardUID)
     return;
   }
 
-
-  // 构造 JSON 请求体
+  // 构造 JSON 请求体（使用6位小数精度）
   StaticJsonDocument<256> doc;
   doc["order_id"] = currentOrderID;
   doc["rfid_card"] = cardUID;
-  doc["end_lat"] = currentLat;
-  doc["end_lng"] = currentLng;
+  doc["end_lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["end_lng"] = String(currentLng, 6);
 
   String postData;
   serializeJson(doc, postData);
-
-  // 调试输出：显示发送的数据
 
   // 发送 HTTP POST 请求（使用还车接口）
   client.print(String("POST /api/orders/lock HTTP/1.1\r\n") +
@@ -832,7 +838,6 @@ void sendLockRequest(String cardUID)
                String("Content-Type: application/json\r\n") +
                String("Content-Length: ") + postData.length() + "\r\n\r\n" +
                postData);
-
 
   // 处理响应
   bool success = processLockResponse(client);
@@ -1119,8 +1124,8 @@ void sendHeartbeat()
 {
   StaticJsonDocument<256> doc;
   doc["timestamp"] = millis();
-  doc["lat"] = currentLat;
-  doc["lng"] = currentLng;
+  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lng"] = String(currentLng, 6);
   doc["battery"] = 100; // TODO: 读取实际电池电量
   doc["status"] = (currentState == STATE_RIDING) ? "riding" : "idle";
 
@@ -1141,8 +1146,8 @@ void sendHeartbeat()
 void sendGPSReport()
 {
   StaticJsonDocument<256> doc;
-  doc["lat"] = currentLat;
-  doc["lng"] = currentLng;
+  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lng"] = String(currentLng, 6);
   doc["mode"] = useSimulation ? "hybrid" : "real"; // hybrid=真实起始+模拟移动, real=完全真实
   doc["timestamp"] = millis();
 
@@ -1226,7 +1231,9 @@ void updateOLEDIdle()
   display.print("GPS:");
   if (gpsValid)
   {
-    display.println("OK");
+    display.print("OK");
+    display.print(gps.satellites.value()); // 显示卫星数量
+    display.println("S");
   }
   else
   {
@@ -1236,12 +1243,12 @@ void updateOLEDIdle()
   // 坐标信息 - 行 32
   display.setCursor(0, 32);
   display.print("Lat:");
-  display.println(currentLat, 4);
+  display.println(currentLat, 6);
 
   // 坐标信息 - 行 42
   display.setCursor(0, 42);
   display.print("Lng:");
-  display.println(currentLng, 4);
+  display.println(currentLng, 6);
 }
 
 /**
@@ -1249,7 +1256,7 @@ void updateOLEDIdle()
  */
 void updateOLEDRiding()
 {
-  // 按文章建议：访问 OLED 前确保 SPI 非活动
+  // 访问 OLED 前确保 SPI 非活动
   digitalWrite(RFID_SDA_PIN, HIGH);
 
   display.setTextSize(1);
@@ -1274,8 +1281,9 @@ void updateOLEDRiding()
   display.print(rideSeconds);
   display.println("s");
 
-  // 预计费用 - 行 34
-  float cost = rideDuration * PRICE_PER_MINUTE;
+  // 预计费用 - 行 34 (按总秒数计算，实时显示)
+  unsigned long totalSeconds = (millis() - rideStartTime) / 1000;
+  float cost = (totalSeconds / 60.0) * PRICE_PER_MINUTE;
   display.setCursor(0, 34);
   display.print("Cost: ");
   display.print(cost, 2);

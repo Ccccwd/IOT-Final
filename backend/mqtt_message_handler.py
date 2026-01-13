@@ -52,9 +52,11 @@ def handle_heartbeat_message(topic: str, data: Dict[str, Any], db: Session):
             logger.warning(f"收到心跳但车辆不存在: bike_id={bike_id}")
             return
 
-        # 更新车辆信息
-        bike.current_lat = data.get('lat')
-        bike.current_lng = data.get('lng')
+        # 更新车辆信息（确保转换为浮点数）
+        lat = float(data.get('lat', 0))
+        lng = float(data.get('lng', 0))
+        bike.current_lat = lat
+        bike.current_lng = lng
         bike.battery = data.get('battery', 100)
         bike.last_heartbeat = datetime.now()
 
@@ -67,7 +69,7 @@ def handle_heartbeat_message(topic: str, data: Dict[str, Any], db: Session):
 
         logger.info(
             f"✓ 心跳更新: bike_{bike_id} | "
-            f"位置=({data.get('lat'):.6f}, {data.get('lng'):.6f}) | "
+            f"位置=({lat:.6f}, {lng:.6f}) | "
             f"电量={data.get('battery')}% | "
             f"状态={hw_status}"
         )
@@ -98,16 +100,18 @@ def handle_gps_message(topic: str, data: Dict[str, Any], db: Session):
             logger.warning(f"收到GPS但车辆不存在: bike_id={bike_id}")
             return
 
-        # 更新车辆位置
-        bike.current_lat = data.get('lat')
-        bike.current_lng = data.get('lng')
+        # 更新车辆位置（确保转换为浮点数）
+        lat = float(data.get('lat', 0))
+        lng = float(data.get('lng', 0))
+        bike.current_lat = lat
+        bike.current_lng = lng
         bike.last_heartbeat = datetime.now()
 
         db.commit()
 
         logger.info(
             f"✓ GPS更新: bike_{bike_id} | "
-            f"位置=({data.get('lat'):.6f}, {data.get('lng'):.6f}) | "
+            f"位置=({lat:.6f}, {lng:.6f}) | "
             f"模式={data.get('mode')}"
         )
 

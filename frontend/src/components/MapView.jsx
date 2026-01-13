@@ -14,18 +14,81 @@ function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSel
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef({});
+  const polylinesRef = useRef({}); // 存储轨迹线
   const infoWindowRef = useRef(null);
+  const bikesRef = useRef(bikes); // 保存 bikes 引用，用于定时器
+  // 存储骑行中车辆的轨迹点（实时模拟轨迹）
+  const ridingTrajectoriesRef = useRef({}); // bike_id -> [{lat, lng, timestamp}]
   const [internalSelectedBike, setInternalSelectedBike] = useState(null);
-  const [mapLoading, setMapLoading] = useState(false); // 改为 false，避免死锁
+  const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState(null);
   const [containerReady, setContainerReady] = useState(false);
-  const [initTriggered, setInitTriggered] = useState(false); // 防止重复初始化
-  const [isInitializing, setIsInitializing] = useState(false); // 初始化进行中标记
+  const [initTriggered, setInitTriggered] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
 
   // 使用外部传入的 selectedBike，如果没有则使用内部状态
   const selectedBike = externalSelectedBike !== undefined ? externalSelectedBike : internalSelectedBike;
 
+  // 保持 bikesRef 同步
+  useEffect(() => {
+    bikesRef.current = bikes;
+
+    console.log('[MapView] 🔄 检查车辆状态，车辆总数:', bikes.length);
+
+    // 检查骑行中的车辆，更新实时轨迹
+    bikes.forEach(bike => {
+      console.log('[MapView] 车辆:', bike.bike_code, '状态:', bike.status, '坐标:', bike.current_lat, bike.current_lng);
+
+      if (bike.status === 'riding' && isValidCoord(bike.current_lat, bike.current_lng)) {
+        const bikeId = bike.id.toString();
+        const trajectory = ridingTrajectoriesRef.current[bikeId] || [];
+
+        console.log('[MapView] ✓ 车辆正在骑行，当前轨迹点数:', trajectory.length);
+
+        // 添加新的轨迹点（避免重复点）
+        const lastPoint = trajectory[trajectory.length - 1];
+        const isNewPoint = !lastPoint ||
+          Math.abs(lastPoint.lat - bike.current_lat) > 0.00001 ||
+          Math.abs(lastPoint.lng - bike.current_lng) > 0.00001;
+
+        if (isNewPoint) {
+          ridingTrajectoriesRef.current[bikeId] = [
+            ...trajectory,
+            {
+              lat: parseFloat(bike.current_lat),
+              lng: parseFloat(bike.current_lng),
+              timestamp: Date.now()
+            }
+          ];
+
+          console.log('[MapView] 📍 添加轨迹点:', bike.bike_code, '总点数:', ridingTrajectoriesRef.current[bikeId].length);
+        } else {
+          console.log('[MapView] ⏭️ 跳过重复点:', bike.bike_code);
+        }
+      } else if (bike.status !== 'riding') {
+        // 如果车辆不再骑行，清空轨迹
+        const bikeId = bike.id.toString();
+        if (ridingTrajectoriesRef.current[bikeId]) {
+          delete ridingTrajectoriesRef.current[bikeId];
+          console.log('[MapView] 🗑️ 清空轨迹:', bike.bike_code);
+        }
+      }
+    });
+
+    // 只有在地图已初始化时才绘制轨迹
+    if (mapRef.current && window.BMap) {
+      console.log('[MapView] 🎨 准备绘制轨迹，骑行中车辆:', Object.keys(ridingTrajectoriesRef.current));
+      // 延迟执行以确保 markers 已更新
+      setTimeout(() => {
+        drawRidingTrajectories();
+      }, 100);
+    }
+  }, [bikes]);
+
   console.log('[MapView] 组件渲染开始, bikes.length:', bikes.length, 'loading:', loading, 'mapLoading:', mapLoading);
+  if (bikes.length > 0) {
+    console.log('[MapView] 第一辆车的数据:', bikes[0]);
+  }
 
   // 回调 ref：当容器被设置时触发
   const setMapContainerRef = useCallback((node) => {
@@ -73,27 +136,35 @@ function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSel
       // 创建地图实例
       const map = new window.BMap.Map(mapContainerRef.current, {
         enableMapClick: false,
-        minZoom: 10,
-        maxZoom: 18,
+        minZoom: 12,
+        maxZoom: 20,
       });
 
       console.log('[MapView] 地图实例创建成功');
 
-      // 设置中心点和缩放级别
+      // 设置中心点和缩放级别（提高默认缩放级别）
       const point = new window.BMap.Point(
         MAP_CONFIG.center.lng,
         MAP_CONFIG.center.lat
       );
-      map.centerAndZoom(point, MAP_CONFIG.zoom);
+      map.centerAndZoom(point, 16);
 
       console.log('[MapView] 地图中心点已设置');
 
       // 启用滚轮缩放
       map.enableScrollWheelZoom(true);
 
-      // 添加控件
-      map.addControl(new window.BMap.NavigationControl());
-      map.addControl(new window.BMap.ScaleControl());
+      // 添加控件（调整位置避免重合）
+      // 导航控件（左上角，偏移更大）
+      map.addControl(new window.BMap.NavigationControl({
+        anchor: window.BMAP_ANCHOR_TOP_LEFT,
+        offset: new window.BMap.Size(15, 80) // 增加垂直偏移
+      }));
+      // 比例尺（左下角）
+      map.addControl(new window.BMap.ScaleControl({
+        anchor: window.BMAP_ANCHOR_BOTTOM_LEFT,
+        offset: new window.BMap.Size(15, 10)
+      }));
 
       console.log('[MapView] 地图控件已添加');
 
@@ -124,46 +195,93 @@ function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSel
 
     const map = mapRef.current;
 
-    // 清除旧的 Marker
+    // 清除所有现有的 Marker
     Object.values(markersRef.current).forEach((marker) => {
       map.removeOverlay(marker);
     });
     markersRef.current = {};
 
+    // 只清除非骑行状态车辆的轨迹线（保留骑行中的轨迹）
+    const ridingBikeIds = new Set(
+      bikesRef.current
+        .filter(bike => bike.status === 'riding')
+        .map(bike => bike.id.toString())
+    );
+    
+    Object.keys(polylinesRef.current).forEach((bikeId) => {
+      if (!ridingBikeIds.has(bikeId.toString())) {
+        map.removeOverlay(polylinesRef.current[bikeId]);
+        delete polylinesRef.current[bikeId];
+      }
+    });
+
     console.log('[MapView] updateMarkers: 开始添加标记，车辆总数:', bikes.length);
 
     // 添加新的 Marker
     bikes.forEach((bike) => {
+      console.log('[MapView] 处理车辆:', bike.bike_code, '原始坐标:', bike.current_lat, bike.current_lng);
+
       if (!isValidCoord(bike.current_lat, bike.current_lng)) {
         console.log('[MapView] 跳过无效坐标的车辆:', bike.bike_code, '坐标:', bike.current_lat, bike.current_lng);
         return;
       }
 
       // 坐标转换（假设原始数据是 WGS84）
-      const bd09Coord = wgs84ToBd09(
-        parseFloat(bike.current_lat),
-        parseFloat(bike.current_lng)
-      );
+      const lat = parseFloat(bike.current_lat);
+      const lng = parseFloat(bike.current_lng);
+      console.log('[MapView] 转换前坐标 (WGS84):', { lat, lng });
+
+      const bd09Coord = wgs84ToBd09(lat, lng);
+
+      console.log('[MapView] 转换后坐标 (BD09):', bd09Coord);
 
       const point = new window.BMap.Point(bd09Coord.lng, bd09Coord.lat);
 
-      console.log('[MapView] 添加车辆标记:', bike.bike_code, 'BD09坐标:', bd09Coord);
+      console.log('[MapView] 准备添加标记，状态:', bike.status);
 
-      // 创建自定义图标
+      // 创建自定义自行车图标
       const iconColor = getBikeIconColor(bike.status);
+
+      // 使用更简单的SVG图标，避免base64编码问题
+      const svgIcon = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+          <g fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <!-- 后轮 -->
+            <circle cx="10" cy="30" r="7"/>
+            <!-- 前轮 -->
+            <circle cx="30" cy="30" r="7"/>
+            <!-- 车架 -->
+            <path d="M10 30 L18 18 L30 30"/>
+            <path d="M18 18 L18 10 L24 18"/>
+            <!-- 车把 -->
+            <path d="M24 18 L27 12"/>
+            <!-- 车座 -->
+            <path d="M18 10 L15 6"/>
+            <!-- 中轴连接 -->
+            <path d="M18 18 L18 22"/>
+            <!-- 如果正在骑行，添加动画圆圈 -->
+            ${bike.status === 'riding' ? `
+              <circle cx="20" cy="20" r="15" stroke-width="2" stroke-opacity="0.4">
+                <animate attributeName="r" from="15" to="20" dur="1.5s" repeatCount="indefinite"/>
+                <animate attributeName="stroke-opacity" from="0.4" to="0" dur="1.5s" repeatCount="indefinite"/>
+              </circle>
+            ` : ''}
+          </g>
+        </svg>
+      `;
+
+      // 将SVG转换为base64
+      const base64Icon = btoa(unescape(encodeURIComponent(svgIcon)));
+
+      console.log('[MapView] 创建标记，图标颜色:', iconColor);
+
       const marker = new window.BMap.Marker(point, {
         icon: new window.BMap.Icon(
-          `data:image/svg+xml;base64,${btoa(`
-            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40">
-              <path d="M15 0C6.7 0 0 6.7 0 15c0 8.3 15 25 15 25s15-16.7 15-25C30 6.7 23.3 0 15 0z" fill="${iconColor}"/>
-              <circle cx="15" cy="15" r="8" fill="white"/>
-              <text x="15" y="19" font-size="10" text-anchor="middle" fill="${iconColor}">${bike.bike_code?.split('_')[1] || '?'}</text>
-            </svg>
-          `)}`,
-          new window.BMap.Size(30, 40),
+          `data:image/svg+xml;base64,${base64Icon}`,
+          new window.BMap.Size(40, 40),
           {
-            anchor: new window.BMap.Size(15, 40),
-            imageSize: new window.BMap.Size(30, 40),
+            anchor: new window.BMap.Size(20, 20),
+            imageSize: new window.BMap.Size(40, 40),
           }
         ),
       });
@@ -187,6 +305,51 @@ function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSel
     console.log('[MapView] updateMarkers: 完成，已添加', Object.keys(markersRef.current).length, '个标记');
   }, [bikes, onBikeSelect]);
 
+  // 绘制骑行中车辆的轨迹
+  const drawRidingTrajectories = useCallback(() => {
+    if (!mapRef.current || !window.BMap) {
+      return;
+    }
+
+    const map = mapRef.current;
+
+    // 遍历所有骑行中的车辆
+    Object.keys(ridingTrajectoriesRef.current).forEach(bikeId => {
+      const trajectory = ridingTrajectoriesRef.current[bikeId];
+
+      if (trajectory.length < 2) {
+        return; // 至少需要2个点才能绘制轨迹
+      }
+
+      console.log('[MapView] 🎨 绘制轨迹, bike_id:', bikeId, '点数:', trajectory.length);
+
+      // 清除旧轨迹
+      if (polylinesRef.current[bikeId]) {
+        map.removeOverlay(polylinesRef.current[bikeId]);
+      }
+
+      // 转换坐标并创建轨迹点数组
+      const points = trajectory.map(item => {
+        const bd09Coord = wgs84ToBd09(item.lat, item.lng);
+        return new window.BMap.Point(bd09Coord.lng, bd09Coord.lat);
+      });
+
+      // 创建轨迹线（亮蓝色，更粗，不透明）
+      const polyline = new window.BMap.Polyline(points, {
+        strokeColor: '#FF4D4F', // 改为红色，更显眼
+        strokeWeight: 8, // 更粗
+        strokeOpacity: 1.0, // 完全不透明
+        strokeStyle: 'solid' // 实线
+      });
+
+      // 添加到地图
+      map.addOverlay(polyline);
+      polylinesRef.current[bikeId] = polyline;
+
+      console.log('[MapView] ✅ 轨迹绘制成功, bike_id:', bikeId, '颜色: 红色, 粗细: 8px');
+    });
+  }, []);
+
   // 显示 InfoWindow
   const showInfoWindow = (bike, point) => {
     if (!infoWindowRef.current) {
@@ -194,12 +357,13 @@ function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSel
     }
 
     const content = `
-      <div style="padding: 10px; min-width: 280px;">
-        <h4 style="margin: 0 0 10px 0;">${bike.bike_code}</h4>
-        <p style="margin: 5px 0;"><strong>状态：</strong>${getStatusText(bike.status)}</p>
-        <p style="margin: 5px 0;"><strong>位置：</strong>${bike.current_lat?.toFixed(6)}, ${bike.current_lng?.toFixed(6)}</p>
+      <div style="padding: 10px; min-width: 280px; max-width: 350px; box-sizing: border-box;">
+        <h4 style="margin: 0 0 10px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${bike.bike_code}</h4>
+        <p style="margin: 5px 0; word-break: break-all;"><strong>状态：</strong>${getStatusText(bike.status)}</p>
+        <p style="margin: 5px 0; word-break: break-all; font-size: 12px;"><strong>位置：</strong>${bike.current_lat?.toFixed(6)}, ${bike.current_lng?.toFixed(6)}</p>
         <p style="margin: 5px 0;"><strong>电量：</strong>${bike.battery || 0}%</p>
-        <p style="margin: 5px 0;"><strong>最后心跳：</strong>${bike.last_heartbeat ? new Date(bike.last_heartbeat).toLocaleString() : '无'}</p>
+        <p style="margin: 5px 0; word-break: break-all; font-size: 12px;"><strong>最后心跳：</strong>${bike.last_heartbeat ? new Date(bike.last_heartbeat).toLocaleString() : '无'}</p>
+        ${bike.status === 'riding' ? '<p style="margin: 5px 0; color: #1890ff; word-break: break-all;"><strong>骑行轨迹已自动显示在地图上</strong></p>' : ''}
         <div style="margin-top: 15px;">
           <button
             onclick="window.handleBikeControl(${bike.id}, 'unlock')"
@@ -221,6 +385,7 @@ function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSel
   // 远程控制处理
   const handleBikeControl = async (bikeId, action) => {
     try {
+      // 远程控制命令
       const response = await fetch('/api/admin/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -247,6 +412,29 @@ function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSel
       delete window.handleBikeControl;
     };
   }, [handleBikeControl]);
+
+  // 组件卸载时清理地图资源
+  useEffect(() => {
+    return () => {
+      // 清除轨迹线
+      if (mapRef.current) {
+        Object.values(polylinesRef.current).forEach((polyline) => {
+          mapRef.current.removeOverlay(polyline);
+        });
+      }
+    };
+  }, []);
+
+  // 辅助函数：安全的 UTF-8 base64 编码
+  const utf8ToB64 = (str) => {
+    try {
+      return window.btoa(unescape(encodeURIComponent(str)));
+    } catch (error) {
+      console.error('[MapView] Base64编码失败:', error);
+      // 返回一个默认图标
+      return window.btoa('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15" fill="#1890ff"/></svg>');
+    }
+  };
 
   // 车辆状态辅助函数
   const getStatusText = (status) => {
@@ -297,8 +485,8 @@ function MapView({ bikes, loading, selectedBike: externalSelectedBike, onBikeSel
 
     const point = new window.BMap.Point(bd09Coord.lng, bd09Coord.lat);
 
-    // 移动地图中心并缩放
-    mapRef.current.centerAndZoom(point, 16);
+    // 移动地图中心并缩放（使用最大缩放级别）
+    mapRef.current.centerAndZoom(point, 20);
 
     console.log('[MapView] 地图已跳转到车辆位置:', selectedBike.bike_code, bd09Coord);
 

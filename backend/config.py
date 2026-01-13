@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # 业务配置
     INITIAL_BALANCE: float = 50.0  # 新用户初始余额
     MIN_BALANCE: float = 1.0  # 最低余额要求
-    PRICE_PER_MINUTE: float = 0.1  # 每分钟价格
+    PRICE_PER_MINUTE: float = 0.6  # 每分钟价格（0.01元/秒 = 0.6元/分钟）
 
     @property
     def cors_origins_list(self) -> List[str]:

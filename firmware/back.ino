@@ -95,7 +95,7 @@ const unsigned long MQTT_RETRY_INTERVAL = 5000;     // MQTT 重连间隔 5 秒
 const unsigned long DISPLAY_UPDATE_INTERVAL = 1000; // OLED 刷新间隔 1 秒
 
 // 费用配置
-const float PRICE_PER_MINUTE = 0.1; // 每分钟 0.1 元
+const float PRICE_PER_MINUTE = 0.6; // 每分钟 0.6 元 (0.01元/秒，方便查看实时计费效果)
 const float MIN_BALANCE = 1.0;      // 最低余额 1 元
 
 // =========================== 全局变量 ===========================
@@ -129,12 +129,15 @@ float currentBalance = 0.0;      // 当前余额
 unsigned long rideStartTime = 0; // 骑行开始时间
 int currentOrderID = 0;          // 当前订单 ID
 
-// GPS 数据（使用模拟坐标用于测试）
-float currentLat = 30.3078; // 模拟坐标：杭州钱塘区
-float currentLng = 120.4851;
-float startLat = 30.3078;    // 起始位置
-float startLng = 120.4851;
-bool gpsValid = true; // 设为true以便测试后端功能
+// GPS 数据（混合模式：真实起始坐标 + 模拟移动）
+// 目标百度坐标: 30.313506, 120.395996 (杭州钱塘区)
+// 反向计算得到的WGS84坐标（已向西移动0.02度）: 30.302155, 120.363254
+// 转换链: WGS84(30.302155, 120.363254) → GCJ02 → BD09
+float currentLat = 30.302155;  // 当前纬度 (WGS84)
+float currentLng = 120.363254;  // 当前经度 (WGS84, 向西偏移0.02度)
+float startLat = 30.302155;    // 起始位置纬度
+float startLng = 120.363254;    // 起始位置经度
+bool gpsValid = true;   // GPS 定位是否有效（设为true以便测试）
 
 // 模拟移动参数
 const float MOVE_STEP = 0.0001; // 每次移动的步长（约11米）
@@ -593,6 +596,12 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     displaySubMessage = "管理员操作";
 
     Serial.println(F(" 远程开锁成功！"));
+
+    // 立即发送心跳包，通知前端状态已更新
+    if (mqttClient.connected())
+    {
+      sendHeartbeat();
+    }
   }
   else if (strcmp(action, "force_lock") == 0)
   {
@@ -618,6 +627,12 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     controlLED(false); // 熄灭LED（空闲）
 
     Serial.println(F(" 远程关锁成功！"));
+
+    // 立即发送心跳包，通知前端状态已更新
+    if (mqttClient.connected())
+    {
+      sendHeartbeat();
+    }
   }
 }
 
@@ -783,11 +798,11 @@ void sendAuthRequest(String action, String cardUID)
 
   Serial.println(F("   ✓ 连接成功！"));
 
-  // 构造 JSON 请求体
+  // 构造 JSON 请求体（使用6位小数精度，约0.1米）
   StaticJsonDocument<256> doc;
   doc["rfid_card"] = cardUID;
-  doc["lat"] = currentLat;
-  doc["lng"] = currentLng;
+  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lng"] = String(currentLng, 6);
   doc["bike_code"] = "BIKE_001"; // 添加车辆编号
 
   String postData;
@@ -865,12 +880,12 @@ void sendLockRequest(String cardUID)
 
   Serial.println(F("   ✓ 连接成功！"));
 
-  // 构造 JSON 请求体
+  // 构造 JSON 请求体（使用6位小数精度）
   StaticJsonDocument<256> doc;
   doc["order_id"] = currentOrderID;
   doc["rfid_card"] = cardUID;
-  doc["end_lat"] = currentLat;
-  doc["end_lng"] = currentLng;
+  doc["end_lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["end_lng"] = String(currentLng, 6);
 
   String postData;
   serializeJson(doc, postData);
@@ -1213,8 +1228,8 @@ void sendHeartbeat()
 {
   StaticJsonDocument<256> doc;
   doc["timestamp"] = millis();
-  doc["lat"] = currentLat;
-  doc["lng"] = currentLng;
+  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lng"] = String(currentLng, 6);
   doc["battery"] = 100; // TODO: 读取实际电池电量
   doc["status"] = (currentState == STATE_RIDING) ? "riding" : "idle";
 
@@ -1237,8 +1252,8 @@ void sendHeartbeat()
 void sendGPSReport()
 {
   StaticJsonDocument<256> doc;
-  doc["lat"] = currentLat;
-  doc["lng"] = currentLng;
+  doc["lat"] = String(currentLat, 6);  // 6位小数 = ~0.1米精度
+  doc["lng"] = String(currentLng, 6);
   doc["mode"] = "simulation"; // simulation（模拟）或 real（真实GPS）
   doc["timestamp"] = millis();
 
@@ -1337,12 +1352,12 @@ void updateOLEDIdle()
   // 坐标信息 - 行 32
   display.setCursor(0, 32);
   display.print("Lat:");
-  display.println(currentLat, 4);
+  display.println(currentLat, 6);  // 显示6位小数
 
   // 坐标信息 - 行 42
   display.setCursor(0, 42);
   display.print("Lng:");
-  display.println(currentLng, 4);
+  display.println(currentLng, 6);  // 显示6位小数
 }
 
 /**
@@ -1375,8 +1390,9 @@ void updateOLEDRiding()
   display.print(rideSeconds);
   display.println("s");
 
-  // 预计费用 - 行 34
-  float cost = rideDuration * PRICE_PER_MINUTE;
+  // 预计费用 - 行 34 (按总秒数计算，实时显示)
+  unsigned long totalSeconds = (millis() - rideStartTime) / 1000;
+  float cost = (totalSeconds / 60.0) * PRICE_PER_MINUTE;
   display.setCursor(0, 34);
   display.print("Cost: ");
   display.print(cost, 2);

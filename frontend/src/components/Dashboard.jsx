@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Statistic, Badge, Space, Spin } from 'antd';
 import {
-  CarOutlined,
+  EnvironmentOutlined,
   UserOutlined,
   ShoppingOutlined,
   DollarOutlined,
@@ -14,9 +14,13 @@ import { useMQTT } from '../hooks/useMQTT';
 import './Dashboard.css';
 
 function Dashboard() {
+  console.log('[Dashboard] 🚀 组件渲染开始 - 代码版本: 2026-01-13-15:45');
   const { bikes, stats, loading, refetch, updateBike } = useBikes();
   const { connected, subscribe } = useMQTT();
   const [selectedBike, setSelectedBike] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  console.log('[Dashboard] MQTT连接状态:', connected, 'useMQTT hook已调用');
 
   // 处理车辆选中
   const handleBikeSelect = (bike) => {
@@ -24,28 +28,54 @@ function Dashboard() {
     setSelectedBike(bike);
   };
 
+  // 处理刷新按钮
+  const handleRefresh = async () => {
+    if (isRefreshing) {
+      return; // 防止重复点击
+    }
+
+    setIsRefreshing(true);
+    try {
+      console.log('[Dashboard] 🔄 手动刷新数据');
+      await refetch(); // 只刷新数据，不断开WebSocket
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // 监听 MQTT 心跳消息，实时更新车辆数据
   useEffect(() => {
-    if (!connected) return;
+    console.log('[Dashboard] MQTT订阅 useEffect触发, connected:', connected);
+    if (!connected) {
+      console.log('[Dashboard] MQTT未连接，跳过订阅');
+      return;
+    }
 
+    console.log('[Dashboard] 开始订阅 bike/+/heartbeat');
     // 订阅心跳包主题
     const unsubscribeHeartbeat = subscribe(
       'bike/+/heartbeat',
       (topic, data) => {
-        console.log('[Dashboard] 收到心跳包:', topic, data);
+        console.log('[Dashboard] ✅ 收到心跳包回调:', topic, data);
 
         // 从主题中提取 bike_id，例如: bike/001/heartbeat -> 1
         const bikeCode = topic.split('/')[1];
         const bikeId = parseInt(bikeCode);
 
+        console.log('[Dashboard] 提取bikeCode:', bikeCode, 'bikeId:', bikeId);
+
         // 实时更新车辆数据
+        console.log('[Dashboard] 调用updateBike更新车辆');
         updateBike(bikeId, {
-          current_lat: data.lat,
-          current_lng: data.lng,
+          current_lat: parseFloat(data.lat), // 转换为数字
+          current_lng: parseFloat(data.lng), // 转换为数字
           battery: data.battery,
           status: data.status,
           last_heartbeat: new Date().toISOString(),
         });
+
+        // 如果收到心跳包，立即刷新数据（确保状态同步）
+        setTimeout(() => refetch(), 500);
       }
     );
 
@@ -61,10 +91,13 @@ function Dashboard() {
 
         // 实时更新车辆位置
         updateBike(bikeId, {
-          current_lat: data.lat,
-          current_lng: data.lng,
+          current_lat: parseFloat(data.lat), // 转换为数字
+          current_lng: parseFloat(data.lng), // 转换为数字
           last_heartbeat: new Date().toISOString(),
         });
+
+        // GPS上报时也刷新数据
+        setTimeout(() => refetch(), 500);
       }
     );
 
@@ -100,8 +133,13 @@ function Dashboard() {
             status="default"
             text={`在线车辆: ${bikes.filter(b => b.last_heartbeat).length}`}
           />
+          <Badge
+            status={bikes.filter(b => b.status === 'riding').length > 0 ? 'success' : 'default'}
+            text={`骑行中: ${bikes.filter(b => b.status === 'riding').length}`}
+          />
           <ReloadOutlined
-            onClick={refetch}
+            onClick={handleRefresh}
+            spin={isRefreshing}
             style={{ cursor: 'pointer', fontSize: 16 }}
           />
         </Space>
@@ -114,7 +152,7 @@ function Dashboard() {
             <Statistic
               title="总车辆数"
               value={stats.total_bikes || 0}
-              prefix={<CarOutlined />}
+              prefix={<EnvironmentOutlined />}
               valueStyle={{ color: '#1890ff' }}
             />
           </Card>
@@ -165,7 +203,7 @@ function Dashboard() {
           <ControlPanel
             bikes={bikes}
             loading={loading}
-            onRefresh={refetch}
+            onRefresh={handleRefresh}
             onBikeSelect={handleBikeSelect}
           />
         </Col>

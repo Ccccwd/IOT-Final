@@ -115,6 +115,34 @@ export function bd09ToGcj02(lat, lng) {
 }
 
 /**
+ * GCJ02 转 WGS84（粗略估算）
+ * @param {number} lat - 纬度
+ * @param {number} lng - 经度
+ * @returns {{lat: number, lng: number}}
+ */
+export function gcj02ToWgs84(lat, lng) {
+  if (outOfChina(lat, lng)) {
+    return { lat, lng };
+  }
+  const gcj = wgs84ToGcj02(lat, lng);
+  const wgsLat = lat * 2 - gcj.lat;
+  const wgsLng = lng * 2 - gcj.lng;
+  return { lat: wgsLat, lng: wgsLng };
+}
+
+/**
+ * BD09 转 WGS84（百度地图坐标转GPS坐标）
+ * @param {number} lat - 纬度
+ * @param {number} lng - 经度
+ * @returns {{lat: number, lng: number}}
+ */
+export function bd09ToWgs84(lat, lng) {
+  const gcj02 = bd09ToGcj02(lat, lng);
+  const wgs84 = gcj02ToWgs84(gcj02.lat, gcj02.lng);
+  return wgs84;
+}
+
+/**
  * 判断坐标是否为有效值
  * @param {number} lat - 纬度
  * @param {number} lng - 经度

@@ -8,15 +8,13 @@ import {
   Tag,
   Space,
   Badge,
-  Statistic,
   Modal,
   message,
 } from 'antd';
 import {
   SearchOutlined,
   ReloadOutlined,
-  CarOutlined,
-  CheckCircleOutlined,
+  EnvironmentOutlined,
   LockOutlined,
   UnlockOutlined,
   ExclamationCircleOutlined,
@@ -115,7 +113,7 @@ function ControlPanel({ bikes, loading, onRefresh, onBikeSelect }) {
       key: 'bike_code',
       render: (text, record) => (
         <Space>
-          <CarOutlined />
+          <EnvironmentOutlined />
           {text}
         </Space>
       ),
@@ -142,28 +140,29 @@ function ControlPanel({ bikes, loading, onRefresh, onBikeSelect }) {
       title: '电池',
       dataIndex: 'battery',
       key: 'battery',
+      width: 80,
       render: (battery) => {
-        const level = battery > 50 ? '正常' : battery > 20 ? '较低' : '很低';
-        const color = battery > 50 ? 'green' : battery > 20 ? 'orange' : 'red';
+        const color = battery > 50 ? '#52c41a' : battery > 20 ? '#faad14' : '#ff4d4f';
         return (
-          <Space>
-            <Badge count={battery} style={{ backgroundColor: color }} />
-            <span style={{ fontSize: 12 }}>{level}</span>
-          </Space>
+          <span style={{ color, fontWeight: 'bold' }}>
+            {battery}%
+          </span>
         );
       },
     },
     {
       title: '位置',
       key: 'location',
+      width: 100,
+      ellipsis: true,
       render: (_, record) => {
         if (!record.current_lat || !record.current_lng) {
           return <span style={{ color: '#999' }}>无数据</span>;
         }
+        const location = `${parseFloat(record.current_lat).toFixed(4)},${parseFloat(record.current_lng).toFixed(4)}`;
         return (
-          <span style={{ fontSize: 12 }}>
-            {parseFloat(record.current_lat).toFixed(4)},{' '}
-            {parseFloat(record.current_lng).toFixed(4)}
+          <span style={{ fontSize: 11 }} title={location}>
+            {location}
           </span>
         );
       },
@@ -171,6 +170,7 @@ function ControlPanel({ bikes, loading, onRefresh, onBikeSelect }) {
     {
       title: '操作',
       key: 'action',
+      width: 100,
       render: (_, record) => {
         const isLoading = controllingBikes[record.id];
 
@@ -217,32 +217,6 @@ function ControlPanel({ bikes, loading, onRefresh, onBikeSelect }) {
   return (
     <Card title="车辆列表" bordered={false}>
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
-        {/* 统计信息 */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: 8,
-          }}
-        >
-          <Statistic
-            title="空闲"
-            value={statusStats.idle}
-            valueStyle={{ fontSize: 18, color: '#52c41a' }}
-            prefix={<CheckCircleOutlined />}
-          />
-          <Statistic
-            title="骑行中"
-            value={statusStats.riding}
-            valueStyle={{ fontSize: 18, color: '#ff4d4f' }}
-          />
-          <Statistic
-            title="故障"
-            value={statusStats.fault}
-            valueStyle={{ fontSize: 18, color: '#d9d9d9' }}
-          />
-        </div>
-
         {/* 筛选器 */}
         <Select
           defaultValue="all"
@@ -276,6 +250,7 @@ function ControlPanel({ bikes, loading, onRefresh, onBikeSelect }) {
           onClick={onRefresh}
           loading={loading}
           block
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           刷新状态
         </Button>
@@ -288,7 +263,8 @@ function ControlPanel({ bikes, loading, onRefresh, onBikeSelect }) {
           pagination={{ pageSize: 5, size: 'small' }}
           rowKey="id"
           loading={loading}
-          scroll={{ y: 300 }}
+          scroll={{ x: 'max-content', y: 300 }}
+          tableLayout="fixed"
           rowClassName={(record) => {
             if (record.status === 'riding') return 'row-riding';
             if (record.status === 'fault') return 'row-fault';

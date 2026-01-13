@@ -24,6 +24,7 @@ from models import (
     BikeStatus,
     OrderStatus,
     LogType,
+    UserStatus,
 )
 from schemas import (
     UserCreate,
@@ -398,18 +399,25 @@ async def hardware_unlock(
         db.refresh(user)
         logger.info(f"自动注册新用户: RFID={request.rfid_card}, ID={user.id}")
 
-    # 3. 检查余额
+    # 3. 检查用户状态
+    if user.status == UserStatus.FROZEN.value:
+        return {
+            "success": False,
+            "message": "账户已被冻结，无法使用，请联系管理员",
+        }
+
+    # 4. 检查余额
     if user.balance < Decimal(str(settings.MIN_BALANCE)):
         return {
             "success": False,
             "message": f"余额不足，当前余额: {float(user.balance):.2f} 元，最低需要 {settings.MIN_BALANCE} 元",
         }
 
-    # 4. 检查车辆状态
+    # 5. 检查车辆状态
     if bike.status != BikeStatus.IDLE.value:
         return {"success": False, "message": f"车辆正在使用中，当前状态: {bike.status}"}
 
-    # 5. 创建订单
+    # 6. 创建订单
     order = Order(
         user_id=user.id,
         bike_id=bike.id,
@@ -420,7 +428,7 @@ async def hardware_unlock(
     )
     db.add(order)
 
-    # 6. 更新车辆状态
+    # 7. 更新车辆状态
     bike.status = BikeStatus.RIDING.value
     bike.current_lat = request.lat
     bike.current_lng = request.lng
@@ -451,6 +459,13 @@ async def unlock_bike(unlock: OrderUnlock, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.rfid_card == unlock.rfid_card).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+
+    # 检查用户状态
+    if user.status == UserStatus.FROZEN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被冻结，无法使用，请联系管理员",
+        )
 
     # 检查余额
     if user.balance < settings.MIN_BALANCE:
@@ -525,12 +540,13 @@ async def lock_bike(lock: OrderLock, db: Session = Depends(get_db)):
             detail=f"订单状态错误，当前状态: {order.status}",
         )
 
-    # 计算骑行时长（分钟）
+    # 计算骑行时长（秒 + 分钟）
     end_time = datetime.now()
-    duration_minutes = int((end_time - order.start_time).total_seconds() / 60)
+    total_seconds = (end_time - order.start_time).total_seconds()
+    duration_minutes = int(total_seconds / 60)
 
-    # 计算费用
-    cost = Decimal(str(round(duration_minutes * settings.PRICE_PER_MINUTE, 2)))
+    # 计算费用（按总秒数计算，精确到 0.01 元/秒）
+    cost = Decimal(str(round((total_seconds / 60) * settings.PRICE_PER_MINUTE, 2)))
 
     # 检查余额
     if user.balance < cost:
@@ -686,9 +702,10 @@ async def validate_card(auth: RFIDAuthRequest, db: Session = Depends(get_db)):
             )
             return RFIDAuthResponse(success=False, message="未找到进行中的订单")
 
-        # 计算费用
-        duration_minutes = int((datetime.now() - order.start_time).total_seconds() / 60)
-        cost = round(duration_minutes * settings.PRICE_PER_MINUTE, 2)
+        # 计算费用（按总秒数计算，精确到 0.01 元/秒）
+        total_seconds = (datetime.now() - order.start_time).total_seconds()
+        duration_minutes = int(total_seconds / 60)
+        cost = round((total_seconds / 60) * settings.PRICE_PER_MINUTE, 2)
 
         # 更新订单
         order.end_time = datetime.now()

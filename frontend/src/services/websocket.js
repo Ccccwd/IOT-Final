@@ -84,11 +84,16 @@ class WebSocketService {
       // MQTT 消息转发
       const { topic, data } = message;
       console.log('📨 收到 MQTT 消息:', topic, data);
+      console.log('[WebSocket] 当前注册的监听器:', Object.keys(this.listeners));
 
       // 触发所有注册的监听器
       Object.keys(this.listeners).forEach((pattern) => {
-        if (this._topicMatch(topic, pattern)) {
+        const matched = this._topicMatch(topic, pattern);
+        console.log('[WebSocket] 匹配测试 - topic:', topic, 'pattern:', pattern, 'matched:', matched);
+        if (matched) {
+          console.log('[WebSocket] 触发监听器:', pattern, '回调数量:', this.listeners[pattern].length);
           this.listeners[pattern].forEach((callback) => {
+            console.log('[WebSocket] 执行回调函数');
             callback(topic, data);
           });
         }
@@ -107,6 +112,7 @@ class WebSocketService {
       this.listeners[event] = [];
     }
     this.listeners[event].push(callback);
+    console.log('[WebSocket] 注册监听器:', event, '该事件监听器数量:', this.listeners[event].length);
   }
 
   off(event, callback) {

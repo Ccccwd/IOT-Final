@@ -34,11 +34,15 @@ export const useBikes = () => {
 
   // 更新单个车辆
   const updateBike = useCallback((bikeId, newData) => {
-    setBikes((prevBikes) =>
-      prevBikes.map((bike) =>
+    console.log('[useBikes] updateBike被调用:', { bikeId, newData });
+    setBikes((prevBikes) => {
+      const updated = prevBikes.map((bike) =>
         bike.id === bikeId ? { ...bike, ...newData } : bike
-      )
-    );
+      );
+      const updatedBike = updated.find(b => b.id === bikeId);
+      console.log('[useBikes] 更新后的车辆数据:', updatedBike);
+      return updated;
+    });
   }, []);
 
   // 远程控制车辆
